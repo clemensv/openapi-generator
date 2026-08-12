@@ -23,6 +23,12 @@ import lombok.Setter;
 import java.util.*;
 
 public class CodegenProperty implements Cloneable, IJsonSchemaValidationProperties {
+    @Getter @Setter
+    public String schemaDialect;
+    @Getter @Setter
+    public String logicalType;
+    @Getter @Setter
+    public String wireType;
     /**
      * The value of the 'type' attribute in the OpenAPI schema.
      * The per-language codegen logic may change to a language-specific type.

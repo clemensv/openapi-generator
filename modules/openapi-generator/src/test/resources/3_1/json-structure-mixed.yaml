@@ -1,0 +1,47 @@
+openapi: 3.1.0
+info:
+  title: Mixed schema dialect test
+  version: 1.0.0
+paths:
+  /events:
+    get:
+      operationId: getEvent
+      responses:
+        '200':
+          description: Event
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Event'
+components:
+  schemas:
+    Legacy:
+      type: object
+      required:
+        - legacyId
+      properties:
+        legacyId:
+          type: string
+    Common:
+      $schema: https://json-structure.org/meta/extended/v0/#
+      $id: https://api.example.com/schemas/common
+      definitions:
+        Base:
+          name: Base
+          type: object
+          abstract: true
+          required:
+            - id
+          properties:
+            id:
+              type: uuid
+    Event:
+      $schema: https://json-structure.org/meta/extended/v0/#
+      $id: https://api.example.com/schemas/event
+      name: Event
+      type: object
+      $importdefs: https://api.example.com/schemas/common
+      $extends: '#/definitions/Base'
+      properties:
+        value:
+          type: string

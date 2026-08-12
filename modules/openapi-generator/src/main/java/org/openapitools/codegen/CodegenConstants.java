@@ -441,6 +441,11 @@ public class CodegenConstants {
             "If false, the 'additionalProperties' implementation (set to true by default) is compliant with the OAS and JSON schema specifications. " +
                     "If true (default), keep the old (incorrect) behaviour that 'additionalProperties' is set to false by default.";
 
+    public static final String JSON_STRUCTURE_COMPATIBILITY_MODE = "jsonStructureCompatibilityMode";
+    public static final String JSON_STRUCTURE_COMPATIBILITY_MODE_DESC =
+            "Allow JSON Structure constructs whose exact wire representation is not yet implemented by the selected generator. "
+                    + "Disabled by default so unsupported tuples, choices, alternative required sets, and string-encoded numerics fail explicitly.";
+
     public static final String UNSUPPORTED_V310_SPEC_MSG =
             "OpenAPI 3.1 support is still in beta. To report an issue related to 3.1 spec, please kindly open an issue in the Github repo: https://github.com/openAPITools/openapi-generator.";
 

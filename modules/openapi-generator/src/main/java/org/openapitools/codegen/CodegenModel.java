@@ -61,6 +61,27 @@ public class CodegenModel implements IJsonSchemaValidationProperties {
     // direct descendants that are allowed to extend the current model
     public List<String> permits = new ArrayList<>();
 
+    @Getter @Setter
+    public String schemaDialect;
+    @Getter @Setter
+    public String logicalType;
+    @Getter @Setter
+    public String wireType;
+    @Getter @Setter
+    public String schemaSourceId;
+    @Getter @Setter
+    public String schemaNamespace;
+    @Getter @Setter
+    public boolean abstractSchema;
+    @Getter @Setter
+    public List<List<String>> requiredPropertyAlternatives = new ArrayList<>();
+    @Getter @Setter
+    public List<String> tupleOrder = new ArrayList<>();
+    @Getter @Setter
+    public String choiceSelector;
+    @Getter @Setter
+    public Map<String, String> choiceTypes = new LinkedHashMap<>();
+
     // The schema name as written in the OpenAPI document
     // If it's a reserved word, it will be escaped.
     @Getter @Setter

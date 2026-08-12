@@ -22,6 +22,7 @@ import io.swagger.v3.oas.models.*;
 import io.swagger.v3.oas.models.info.Contact;
 import io.swagger.v3.oas.models.info.Info;
 import io.swagger.v3.oas.models.info.License;
+import io.swagger.v3.oas.models.media.ObjectSchema;
 import io.swagger.v3.oas.models.media.Schema;
 import io.swagger.v3.oas.models.parameters.Parameter;
 import io.swagger.v3.oas.models.security.*;
@@ -38,6 +39,11 @@ import org.openapitools.codegen.meta.GeneratorMetadata;
 import org.openapitools.codegen.meta.Stability;
 import org.openapitools.codegen.model.*;
 import org.openapitools.codegen.serializer.SerializerUtils;
+import org.openapitools.codegen.schema.SchemaDialectDetector;
+import org.openapitools.codegen.schema.jsonstructure.JsonStructureModelCatalog;
+import org.openapitools.codegen.schema.jsonstructure.JsonStructureSchemaMapper;
+import org.openapitools.codegen.schema.jsonstructure.JsonStructureTypeDeclaration;
+import org.openapitools.codegen.schema.jsonstructure.JsonStructureTypeGraph;
 import org.openapitools.codegen.templating.CommonTemplateContentLocator;
 import org.openapitools.codegen.templating.GeneratorTemplateContentLocator;
 import org.openapitools.codegen.templating.MustacheEngineAdapter;
@@ -72,6 +78,8 @@ public class DefaultGenerator implements Generator {
     protected CodegenConfig config;
     protected ClientOptInput opts;
     protected OpenAPI openAPI;
+    protected JsonStructureTypeGraph jsonStructureTypeGraph;
+    protected JsonStructureModelCatalog jsonStructureModelCatalog;
     protected CodegenIgnoreProcessor ignoreProcessor;
     private Boolean generateApis = null;
     private Boolean generateModels = null;
@@ -114,6 +122,19 @@ public class DefaultGenerator implements Generator {
         this.opts = opts;
         this.openAPI = opts.getOpenAPI();
         this.config = opts.getConfig();
+
+        this.jsonStructureTypeGraph = opts.getJsonStructureTypeGraph();
+        this.jsonStructureModelCatalog = null;
+        if (SchemaDialectDetector.containsJsonStructureSchemas(opts.getRawOpenAPI())) {
+            if (jsonStructureTypeGraph == null) {
+                throw new IllegalStateException(
+                        "JSON Structure schemas were detected, but the JSON Structure resolver has not run.");
+            }
+            this.jsonStructureModelCatalog = new JsonStructureModelCatalog(
+                    jsonStructureTypeGraph,
+                    new LinkedHashSet<>(openAPI.getComponents().getSchemas().keySet()));
+            protectJsonStructureComponents();
+        }
 
         List<TemplateDefinition> userFiles = opts.getUserDefinedTemplates();
         if (userFiles != null) {
@@ -283,6 +304,9 @@ public class DefaultGenerator implements Generator {
 
         // set OpenAPI to make these available to all methods
         config.setOpenAPI(openAPI);
+        if (jsonStructureTypeGraph != null) {
+            config.prepareJsonStructureTypes(jsonStructureTypeGraph, jsonStructureModelCatalog);
+        }
 
         if (!config.additionalProperties().containsKey("generatorVersion")) {
             config.additionalProperties().put("generatorVersion", ImplementationVersion.read());
@@ -496,9 +520,18 @@ public class DefaultGenerator implements Generator {
                     }
                 }
 
+                JsonStructureTypeDeclaration jsonStructureDeclaration =
+                        jsonStructureModelCatalog == null ? null : jsonStructureModelCatalog.declaration(name);
                 Schema schema = ModelUtils.getSchemas(this.openAPI).get(name);
 
-                if (schema.getExtensions() != null && Boolean.TRUE.equals(schema.getExtensions().get(X_INTERNAL))) {
+                if (jsonStructureDeclaration != null) {
+                    ModelsMap models = processJsonStructureModel(
+                            config, name, jsonStructureDeclaration, jsonStructureTypeGraph, jsonStructureModelCatalog);
+                    models.put("classname", config.toModelName(name));
+                    models.putAll(config.additionalProperties());
+                    allProcessedModels.put(name, models);
+                    continue;
+                } else if (schema.getExtensions() != null && Boolean.TRUE.equals(schema.getExtensions().get(X_INTERNAL))) {
                     LOGGER.info("Model {} not generated since x-internal is set to true", name);
                     continue;
                 } else if (ModelUtils.isFreeFormObject(schema, openAPI)) { // check to see if it's a free-form object
@@ -676,7 +709,12 @@ public class DefaultGenerator implements Generator {
         }
 
         Set<String> modelsToGenerate = getPropertyAsSet(CodegenConstants.MODELS);
-        Set<String> modelKeys = schemas.keySet();
+        Set<String> modelKeys = schemas.keySet().stream()
+                .filter(name -> jsonStructureModelCatalog == null
+                        || (!jsonStructureModelCatalog.isResourceComponent(name)
+                        && jsonStructureModelCatalog.declaration(name) == null)
+                        || jsonStructureModelCatalog.isGeneratedModel(name))
+                .collect(Collectors.toCollection(LinkedHashSet::new));
         if (modelsToGenerate != null && !modelsToGenerate.isEmpty()) {
             Set<String> updatedKeys = new HashSet<>();
             for (String m : modelKeys) {
@@ -1824,6 +1862,56 @@ public class DefaultGenerator implements Generator {
         objs.setImports(imports);
         config.postProcessModels(objs);
         return objs;
+    }
+
+    private ModelsMap processJsonStructureModel(
+            CodegenConfig config,
+            String name,
+            JsonStructureTypeDeclaration declaration,
+            JsonStructureTypeGraph graph,
+            JsonStructureModelCatalog catalog) {
+        ModelsMap models = new ModelsMap();
+        models.put("package", config.modelPackage());
+        CodegenModel codegenModel = config.fromJsonStructureType(name, declaration, graph, catalog);
+        codegenModel.removeSelfReferenceImport();
+        ModelMap model = new ModelMap();
+        model.setModel(codegenModel);
+        model.put("importPath", config.toModelImport(codegenModel.classname));
+        models.setModels(List.of(model));
+        Set<String> importSet = new ConcurrentSkipListSet<>();
+        for (String nextImport : codegenModel.imports) {
+            String mapping = config.importMapping().get(nextImport);
+            if (mapping == null) {
+                mapping = config.toModelImport(nextImport);
+            }
+            if (mapping != null && !config.defaultIncludes().contains(mapping)) {
+                importSet.add(mapping);
+            }
+            mapping = config.instantiationTypes().get(nextImport);
+            if (mapping != null && !config.defaultIncludes().contains(mapping)) {
+                importSet.add(mapping);
+            }
+        }
+        List<Map<String, String>> imports = new ArrayList<>();
+        for (String value : importSet) {
+            Map<String, String> item = new HashMap<>();
+            item.put("import", value);
+            imports.add(item);
+        }
+        models.setImports(imports);
+        config.postProcessModels(models);
+        return models;
+    }
+
+    private void protectJsonStructureComponents() {
+        if (openAPI.getComponents() == null || openAPI.getComponents().getSchemas() == null) {
+            throw new IllegalStateException("JSON Structure schemas require components.schemas");
+        }
+        jsonStructureTypeGraph.getComponentByResourceId().values().forEach(componentName -> {
+            Schema<?> surrogate = new ObjectSchema();
+            surrogate.addExtension(JsonStructureSchemaMapper.X_SCHEMA_DIALECT, "json-structure");
+            openAPI.getComponents().getSchemas().put(componentName, surrogate);
+        });
     }
 
     private Map<String, SecurityScheme> getAuthMethods(List<SecurityRequirement> securities, Map<String, SecurityScheme> securitySchemes) {

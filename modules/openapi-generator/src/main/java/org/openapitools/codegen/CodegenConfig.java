@@ -23,6 +23,9 @@ import io.swagger.v3.oas.models.Operation;
 import io.swagger.v3.oas.models.media.Schema;
 import io.swagger.v3.oas.models.security.SecurityScheme;
 import io.swagger.v3.oas.models.servers.Server;
+import org.openapitools.codegen.schema.jsonstructure.JsonStructureModelCatalog;
+import org.openapitools.codegen.schema.jsonstructure.JsonStructureTypeDeclaration;
+import org.openapitools.codegen.schema.jsonstructure.JsonStructureTypeGraph;
 import io.swagger.v3.oas.models.servers.ServerVariable;
 import org.openapitools.codegen.api.TemplatingEngineAdapter;
 import org.openapitools.codegen.meta.FeatureSet;
@@ -128,6 +131,20 @@ public interface CodegenConfig {
     void setOutputDir(String dir);
 
     CodegenModel fromModel(String name, Schema schema);
+
+    default CodegenModel fromJsonStructureType(
+            String name,
+            JsonStructureTypeDeclaration declaration,
+            JsonStructureTypeGraph graph,
+            JsonStructureModelCatalog catalog) {
+        throw new UnsupportedOperationException(
+                getClass().getName() + " does not support JSON Structure type generation");
+    }
+
+    default void prepareJsonStructureTypes(
+            JsonStructureTypeGraph graph,
+            JsonStructureModelCatalog catalog) {
+    }
 
     CodegenOperation fromOperation(String resourcePath, String httpMethod, Operation operation, List<Server> servers);
 

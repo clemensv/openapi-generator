@@ -26,6 +26,7 @@ import com.samskivert.mustache.Mustache;
 import com.samskivert.mustache.Mustache.Compiler;
 import com.samskivert.mustache.Mustache.Lambda;
 import io.swagger.v3.core.util.Json;
+import io.swagger.v3.oas.models.Components;
 import io.swagger.v3.oas.models.OpenAPI;
 import io.swagger.v3.oas.models.Operation;
 import io.swagger.v3.oas.models.PathItem;
@@ -64,6 +65,13 @@ import org.openapitools.codegen.model.ModelsMap;
 import org.openapitools.codegen.model.OperationsMap;
 import org.openapitools.codegen.model.WebhooksMap;
 import org.openapitools.codegen.serializer.SerializerUtils;
+import org.openapitools.codegen.schema.jsonstructure.JsonStructureModelCatalog;
+import org.openapitools.codegen.schema.jsonstructure.JsonStructureSchemaMapper;
+import org.openapitools.codegen.schema.jsonstructure.JsonStructureTypeDeclaration;
+import org.openapitools.codegen.schema.jsonstructure.JsonStructureTypeGraph;
+import org.openapitools.codegen.schema.jsonstructure.JsonStructureTypeKind;
+import org.openapitools.codegen.schema.jsonstructure.JsonStructureTypeUse;
+import org.openapitools.codegen.schema.jsonstructure.QualifiedTypeName;
 import org.openapitools.codegen.templating.MustacheEngineAdapter;
 import org.openapitools.codegen.templating.mustache.*;
 import org.openapitools.codegen.utils.DiscriminatorUtils;
@@ -209,6 +217,9 @@ public class DefaultCodegen implements CodegenConfig {
     @Getter
     @Setter
     protected String modelNamePrefix = "", modelNameSuffix = "";
+    @Getter
+    @Setter
+    protected boolean jsonStructureCompatibilityMode;
     @Getter
     @Setter
     protected String apiNamePrefix = "", apiNameSuffix = "Api";
@@ -427,6 +438,9 @@ public class DefaultCodegen implements CodegenConfig {
         convertPropertyToBooleanAndWriteBack(CodegenConstants.PREPEND_FORM_OR_BODY_PARAMETERS, this::setPrependFormOrBodyParameters);
         convertPropertyToBooleanAndWriteBack(CodegenConstants.ENSURE_UNIQUE_PARAMS, this::setEnsureUniqueParams);
         convertPropertyToBooleanAndWriteBack(CodegenConstants.ALLOW_UNICODE_IDENTIFIERS, this::setAllowUnicodeIdentifiers);
+        convertPropertyToBooleanAndWriteBack(
+                CodegenConstants.JSON_STRUCTURE_COMPATIBILITY_MODE,
+                this::setJsonStructureCompatibilityMode);
         // splitOperationsByContentType is a global option rather than a generator one: the behaviour is
         // language-neutral and applies to every generator alike, so it is read from the global properties
         // (--global-property) and is deliberately absent from cliOptions.
@@ -2191,6 +2205,9 @@ public class DefaultCodegen implements CodegenConfig {
         disallowAdditionalPropertiesIfNotPresentOpt.setEnum(disallowAdditionalPropertiesIfNotPresentOpts);
         cliOptions.add(disallowAdditionalPropertiesIfNotPresentOpt);
         this.setDisallowAdditionalPropertiesIfNotPresent(true);
+        cliOptions.add(CliOption.newBoolean(
+                CodegenConstants.JSON_STRUCTURE_COMPATIBILITY_MODE,
+                CodegenConstants.JSON_STRUCTURE_COMPATIBILITY_MODE_DESC).defaultValue(Boolean.FALSE.toString()));
 
         CliOption enumUnknownDefaultCaseOpt = CliOption.newBoolean(
                 CodegenConstants.ENUM_UNKNOWN_DEFAULT_CASE,
@@ -2722,6 +2739,239 @@ public class DefaultCodegen implements CodegenConfig {
     @Override
     public Schema unaliasSchema(Schema schema) {
         return ModelUtils.unaliasSchema(this.openAPI, schema, schemaMapping);
+    }
+
+    @Override
+    public void prepareJsonStructureTypes(
+            JsonStructureTypeGraph graph,
+            JsonStructureModelCatalog catalog) {
+        validateJsonStructureCapabilities(graph);
+        if (openAPI.getComponents() == null) {
+            openAPI.setComponents(new Components());
+        }
+        if (openAPI.getComponents().getSchemas() == null) {
+            openAPI.getComponents().setSchemas(new LinkedHashMap<>());
+        }
+        JsonStructureSchemaMapper mapper = new JsonStructureSchemaMapper();
+        catalog.schemaNames().forEach(modelName ->
+                openAPI.getComponents().getSchemas().put(
+                        modelName,
+                        mapper.toSchema(catalog.declaration(modelName), graph, catalog)));
+    }
+
+    private void validateJsonStructureCapabilities(JsonStructureTypeGraph graph) {
+        Set<String> limitations = new LinkedHashSet<>();
+        graph.getDeclarations().values().forEach(declaration -> {
+            if (declaration.getKind() == JsonStructureTypeKind.TUPLE) {
+                limitations.add("tuple wire encoding");
+            } else if (declaration.getKind() == JsonStructureTypeKind.CHOICE) {
+                limitations.add("choice wire encoding");
+            } else if (declaration.getKind() == JsonStructureTypeKind.UNION) {
+                limitations.add("reusable union encoding");
+            }
+            if (declaration.getRequiredAlternatives().size() > 1) {
+                limitations.add("alternative required-property validation");
+            }
+            collectJsonStructureTypeLimitations(declaration.getKind(), limitations);
+            declaration.getProperties().values().forEach(use ->
+                    collectJsonStructureTypeLimitations(use, graph, limitations));
+            declaration.getChoices().values().forEach(use ->
+                    collectJsonStructureTypeLimitations(use, graph, limitations));
+            collectJsonStructureTypeLimitations(declaration.getItems(), graph, limitations);
+            collectJsonStructureTypeLimitations(declaration.getValues(), graph, limitations);
+            collectJsonStructureTypeLimitations(declaration.getDeclaredType(), graph, limitations);
+            collectJsonStructureTypeLimitations(declaration.getAdditionalPropertiesType(), graph, limitations);
+        });
+        if (limitations.isEmpty()) {
+            return;
+        }
+        String message = "Generator '" + getName()
+                + "' does not guarantee exact JSON Structure support for: "
+                + String.join(", ", limitations);
+        if (!jsonStructureCompatibilityMode) {
+            throw new IllegalArgumentException(
+                    message + ". Set " + CodegenConstants.JSON_STRUCTURE_COMPATIBILITY_MODE
+                            + "=true to use compatibility mappings.");
+        }
+        LOGGER.warn("{}; compatibility mappings are enabled.", message);
+    }
+
+    private void collectJsonStructureTypeLimitations(
+            JsonStructureTypeUse use,
+            JsonStructureTypeGraph graph,
+            Set<String> limitations) {
+        if (use == null) {
+            return;
+        }
+        long nonNullPrimitiveCount = use.getPrimitiveAlternatives().stream()
+                .filter(kind -> kind != JsonStructureTypeKind.NULL)
+                .count();
+        if (nonNullPrimitiveCount + use.getReferenceAlternatives().size() > 1) {
+            limitations.add("mixed union encoding");
+        }
+        if (use.getContentEncoding() != null && !"base64".equals(use.getContentEncoding())) {
+            limitations.add(use.getContentEncoding() + " binary encoding");
+        }
+        if (use.getContentCompression() != null) {
+            limitations.add(use.getContentCompression() + " binary compression");
+        }
+        use.getPrimitiveAlternatives().forEach(kind ->
+                collectJsonStructureTypeLimitations(kind, limitations));
+        use.getReferenceAlternatives().forEach(reference -> {
+            JsonStructureTypeDeclaration target = graph.getDeclarations().get(reference);
+            if (target != null) {
+                collectJsonStructureTypeLimitations(target.getKind(), limitations);
+            }
+        });
+    }
+
+    private void collectJsonStructureTypeLimitations(
+            JsonStructureTypeKind kind,
+            Set<String> limitations) {
+        if (kind == JsonStructureTypeKind.INT64
+                || kind == JsonStructureTypeKind.UINT64
+                || kind == JsonStructureTypeKind.INT128
+                || kind == JsonStructureTypeKind.UINT128
+                || kind == JsonStructureTypeKind.DECIMAL) {
+            limitations.add("string-encoded " + kind.name().toLowerCase(Locale.ROOT));
+        }
+    }
+
+    @Override
+    public CodegenModel fromJsonStructureType(
+            String name,
+            JsonStructureTypeDeclaration declaration,
+            JsonStructureTypeGraph graph,
+            JsonStructureModelCatalog catalog) {
+        Schema schema = openAPI.getComponents().getSchemas().get(name);
+        CodegenModel model = fromModel(name, schema);
+        model.setSchemaDialect("json-structure");
+        model.setLogicalType(declaration.getKind().name().toLowerCase(Locale.ROOT));
+        model.setWireType(declaration.getWireKind().name().toLowerCase(Locale.ROOT));
+        model.setSchemaSourceId(declaration.getOrigin().getResourceId().toString());
+        model.setSchemaNamespace(String.join(".", declaration.getName().getNamespace()));
+        model.setAbstractSchema(declaration.isAbstractType());
+        model.setRequiredPropertyAlternatives(declaration.getRequiredAlternatives());
+        model.setTupleOrder(declaration.getTupleOrder());
+        model.setChoiceSelector(declaration.getSelector());
+        declaration.getChoices().forEach((choiceName, choiceType) -> {
+            if (choiceType.isReference()) {
+                model.getChoiceTypes().put(choiceName, catalog.modelName(choiceType.getReference()));
+            } else {
+                model.getChoiceTypes().put(
+                        choiceName,
+                        choiceType.getPrimitiveAlternatives().stream()
+                                .map(value -> value.name().toLowerCase(Locale.ROOT))
+                                .collect(Collectors.joining("|")));
+            }
+        });
+        String modelType = jsonStructureTargetType(declaration.getKind());
+        if (modelType != null && !ModelUtils.isObjectSchema(schema)) {
+            model.dataType = modelType;
+            if (!defaultIncludes.contains(modelType)) {
+                model.imports.add(modelType);
+            }
+        }
+        model.getVendorExtensions().put(
+                JsonStructureSchemaMapper.X_ORIGIN,
+                declaration.getOrigin().toString());
+        for (CodegenProperty property : model.getVars()) {
+            JsonStructureTypeUse type = jsonStructurePropertyType(
+                    declaration,
+                    property.getBaseName(),
+                    graph,
+                    new LinkedHashSet<>());
+            if (type != null) {
+                property.setSchemaDialect("json-structure");
+                if (type.isReference()) {
+                    JsonStructureTypeDeclaration target = graph.getDeclarations().get(type.getReference());
+                    property.setLogicalType(target.getKind().name().toLowerCase(Locale.ROOT));
+                    property.setWireType(target.getWireKind().name().toLowerCase(Locale.ROOT));
+                } else {
+                    List<String> logicalTypes = type.getPrimitiveAlternatives().stream()
+                            .map(value -> value.name().toLowerCase(Locale.ROOT))
+                            .collect(Collectors.toList());
+                    type.getReferenceAlternatives().forEach(reference -> {
+                        JsonStructureTypeDeclaration target = graph.getDeclarations().get(reference);
+                        logicalTypes.add(target.getKind().name().toLowerCase(Locale.ROOT));
+                    });
+                    property.setLogicalType(String.join("|", logicalTypes));
+                    property.setWireType(String.valueOf(
+                            property.getVendorExtensions().get(JsonStructureSchemaMapper.X_WIRE_TYPE)));
+                    JsonStructureTypeKind primaryType = type.getPrimitiveAlternatives().stream()
+                            .filter(value -> value != JsonStructureTypeKind.NULL)
+                            .findFirst()
+                            .orElse(JsonStructureTypeKind.NULL);
+                    String targetType = jsonStructureTargetType(primaryType);
+                    if (targetType != null) {
+                        property.dataType = targetType;
+                        property.datatypeWithEnum = targetType;
+                        if (!defaultIncludes.contains(targetType)) {
+                            model.imports.add(targetType);
+                        }
+                    }
+                }
+            }
+        }
+        return model;
+    }
+
+    private JsonStructureTypeUse jsonStructurePropertyType(
+            JsonStructureTypeDeclaration declaration,
+            String propertyName,
+            JsonStructureTypeGraph graph,
+            Set<QualifiedTypeName> visited) {
+        if (!visited.add(declaration.getName())) {
+            return null;
+        }
+        JsonStructureTypeUse local = declaration.getProperties().get(propertyName);
+        if (local != null) {
+            return local;
+        }
+        for (QualifiedTypeName base : declaration.getBases()) {
+            JsonStructureTypeDeclaration baseDeclaration = graph.getDeclarations().get(base);
+            JsonStructureTypeUse inherited =
+                    jsonStructurePropertyType(baseDeclaration, propertyName, graph, visited);
+            if (inherited != null) {
+                return inherited;
+            }
+        }
+        return null;
+    }
+
+    protected String jsonStructureTargetType(JsonStructureTypeKind kind) {
+        String typeKey;
+        switch (kind) {
+            case INT8:
+            case UINT8:
+            case INT16:
+                typeKey = "short";
+                break;
+            case UINT16:
+            case INT32:
+                typeKey = "integer";
+                break;
+            case UINT32:
+            case INT64:
+                typeKey = "long";
+                break;
+            case UINT64:
+            case INT128:
+            case UINT128:
+            case DECIMAL:
+                typeKey = "decimal";
+                break;
+            case FLOAT8:
+            case FLOAT:
+                typeKey = "float";
+                break;
+            case DOUBLE:
+                typeKey = "double";
+                break;
+            default:
+                return null;
+        }
+        return typeMapping.getOrDefault(typeKey, typeKey);
     }
 
     private List<Map<String, Object>> unaliasExamples(Map<String, Example> examples) {
