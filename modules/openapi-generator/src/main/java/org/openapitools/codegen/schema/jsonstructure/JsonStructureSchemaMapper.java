@@ -27,6 +27,9 @@ public final class JsonStructureSchemaMapper {
     public static final String X_LOGICAL_TYPE = "x-json-structure-logical-type";
     public static final String X_WIRE_TYPE = "x-json-structure-wire-type";
     public static final String X_ORIGIN = "x-json-structure-origin";
+    public static final String X_EFFECTIVE_ID = "x-json-structure-effective-id";
+    public static final String X_NAMESPACE = "x-json-structure-namespace";
+    public static final String X_REFERENCE_IDENTITIES = "x-json-structure-reference-identities";
     public static final String X_REQUIRED_ALTERNATIVES = "x-json-structure-required-alternatives";
     public static final String X_TUPLE_ORDER = "x-json-structure-tuple-order";
     public static final String X_BASES = "x-json-structure-bases";
@@ -77,6 +80,8 @@ public final class JsonStructureSchemaMapper {
         }
         annotate(schema, declaration.getKind().name().toLowerCase(), declaration.getWireKind().name().toLowerCase());
         schema.addExtension(X_ORIGIN, declaration.getOrigin().toString());
+        schema.addExtension(X_EFFECTIVE_ID, declaration.getName().toString());
+        schema.addExtension(X_NAMESPACE, declaration.getName().getNamespace());
         if (declaration.getPrecision() != null) {
             schema.addExtension("x-json-structure-precision", declaration.getPrecision());
         }

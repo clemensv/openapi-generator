@@ -1,6 +1,11 @@
 {
   "name": "OpenAPIGenerator",
-  "image": "mcr.microsoft.com/devcontainers/base:debian",
+  "build": {
+    "dockerfile": "Dockerfile"
+  },
+  "containerEnv": {
+    "NPM_CONFIG_REGISTRY": "https://packagefeedproxy.microsoft.io/npm/"
+  },
   "features": {
     "ghcr.io/devcontainers/features/java:1": {
       "version": "11",

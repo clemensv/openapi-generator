@@ -29,6 +29,14 @@ public class CodegenProperty implements Cloneable, IJsonSchemaValidationProperti
     public String logicalType;
     @Getter @Setter
     public String wireType;
+    @Getter @Setter
+    public String schemaSourceId;
+    @Getter @Setter
+    public String schemaResourceId;
+    @Getter @Setter
+    public String schemaNamespace;
+    @Getter @Setter
+    public String schemaQualifiedName;
     /**
      * The value of the 'type' attribute in the OpenAPI schema.
      * The per-language codegen logic may change to a language-specific type.

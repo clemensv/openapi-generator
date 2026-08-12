@@ -44,8 +44,17 @@ as empty component models.
 
 All generators receive JSON Structure declarations through the common
 `CodegenModel` and `CodegenProperty` path. Models expose the dialect, logical
-type, wire type, source resource, namespace, abstract status, required
-alternatives, tuple order, and choice metadata.
+type, wire type, effective resource, effective qualified name, source resource,
+namespace, abstract status, required alternatives, tuple order, and choice
+metadata. Referenced properties expose the same effective and source identity
+metadata.
+
+The configured generator package or module remains authoritative. JSON
+Structure namespaces are preserved in metadata and flattened into generated
+model names so that declarations with the same local name remain distinct. For
+example, `Common.Geometry.Point` and `Common.Metadata.Point` become
+`ConsumerCommonGeometryPoint` and `ConsumerCommonMetadataPoint` in generators
+that use PascalCase model names.
 
 Exact wire support is intentionally strict. Generation fails when the selected
 generator cannot guarantee the JSON Structure representation for:
@@ -105,3 +114,11 @@ than duplicating the large JSON Schema sample corpus:
 Strict-safe descriptions are generated with Java, C#, Go, Python,
 TypeScript Fetch, Kotlin, Rust, and PHP. Advanced wire shapes verify both the
 default strict diagnostic and the explicit compatibility-mode path.
+
+The Docker-backed native build matrix compiles or type-checks all four
+strict-safe descriptions with each target's native toolchain:
+
+```shell
+mvn -pl modules/openapi-generator-cli -am -DskipTests package
+bin/json-structure-native-build.sh
+```

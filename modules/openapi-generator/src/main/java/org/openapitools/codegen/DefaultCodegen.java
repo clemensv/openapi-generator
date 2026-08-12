@@ -2849,7 +2849,9 @@ public class DefaultCodegen implements CodegenConfig {
         model.setLogicalType(declaration.getKind().name().toLowerCase(Locale.ROOT));
         model.setWireType(declaration.getWireKind().name().toLowerCase(Locale.ROOT));
         model.setSchemaSourceId(declaration.getOrigin().getResourceId().toString());
+        model.setSchemaResourceId(declaration.getName().getResourceId().toString());
         model.setSchemaNamespace(String.join(".", declaration.getName().getNamespace()));
+        model.setSchemaQualifiedName(declaration.getName().toString());
         model.setAbstractSchema(declaration.isAbstractType());
         model.setRequiredPropertyAlternatives(declaration.getRequiredAlternatives());
         model.setTupleOrder(declaration.getTupleOrder());
@@ -2868,13 +2870,19 @@ public class DefaultCodegen implements CodegenConfig {
         String modelType = jsonStructureTargetType(declaration.getKind());
         if (modelType != null && !ModelUtils.isObjectSchema(schema)) {
             model.dataType = modelType;
-            if (!defaultIncludes.contains(modelType)) {
+            if (needToImport(modelType)) {
                 model.imports.add(modelType);
             }
         }
         model.getVendorExtensions().put(
                 JsonStructureSchemaMapper.X_ORIGIN,
                 declaration.getOrigin().toString());
+        model.getVendorExtensions().put(
+                JsonStructureSchemaMapper.X_EFFECTIVE_ID,
+                declaration.getName().toString());
+        model.getVendorExtensions().put(
+                JsonStructureSchemaMapper.X_NAMESPACE,
+                declaration.getName().getNamespace());
         for (CodegenProperty property : model.getVars()) {
             JsonStructureTypeUse type = jsonStructurePropertyType(
                     declaration,
@@ -2887,6 +2895,7 @@ public class DefaultCodegen implements CodegenConfig {
                     JsonStructureTypeDeclaration target = graph.getDeclarations().get(type.getReference());
                     property.setLogicalType(target.getKind().name().toLowerCase(Locale.ROOT));
                     property.setWireType(target.getWireKind().name().toLowerCase(Locale.ROOT));
+                    setJsonStructureReferenceMetadata(property, type.getReference(), target);
                 } else {
                     List<String> logicalTypes = type.getPrimitiveAlternatives().stream()
                             .map(value -> value.name().toLowerCase(Locale.ROOT))
@@ -2895,6 +2904,13 @@ public class DefaultCodegen implements CodegenConfig {
                         JsonStructureTypeDeclaration target = graph.getDeclarations().get(reference);
                         logicalTypes.add(target.getKind().name().toLowerCase(Locale.ROOT));
                     });
+                    if (!type.getReferenceAlternatives().isEmpty()) {
+                        property.getVendorExtensions().put(
+                                JsonStructureSchemaMapper.X_REFERENCE_IDENTITIES,
+                                type.getReferenceAlternatives().stream()
+                                        .map(QualifiedTypeName::toString)
+                                        .collect(Collectors.toList()));
+                    }
                     property.setLogicalType(String.join("|", logicalTypes));
                     property.setWireType(String.valueOf(
                             property.getVendorExtensions().get(JsonStructureSchemaMapper.X_WIRE_TYPE)));
@@ -2906,7 +2922,7 @@ public class DefaultCodegen implements CodegenConfig {
                     if (targetType != null) {
                         property.dataType = targetType;
                         property.datatypeWithEnum = targetType;
-                        if (!defaultIncludes.contains(targetType)) {
+                        if (needToImport(targetType)) {
                             model.imports.add(targetType);
                         }
                     }
@@ -2914,6 +2930,25 @@ public class DefaultCodegen implements CodegenConfig {
             }
         }
         return model;
+    }
+
+    private void setJsonStructureReferenceMetadata(
+            CodegenProperty property,
+            QualifiedTypeName effectiveName,
+            JsonStructureTypeDeclaration target) {
+        property.setSchemaSourceId(target.getOrigin().getResourceId().toString());
+        property.setSchemaResourceId(effectiveName.getResourceId().toString());
+        property.setSchemaNamespace(String.join(".", effectiveName.getNamespace()));
+        property.setSchemaQualifiedName(effectiveName.toString());
+        property.getVendorExtensions().put(
+                JsonStructureSchemaMapper.X_ORIGIN,
+                target.getOrigin().toString());
+        property.getVendorExtensions().put(
+                JsonStructureSchemaMapper.X_EFFECTIVE_ID,
+                effectiveName.toString());
+        property.getVendorExtensions().put(
+                JsonStructureSchemaMapper.X_NAMESPACE,
+                effectiveName.getNamespace());
     }
 
     private JsonStructureTypeUse jsonStructurePropertyType(

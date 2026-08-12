@@ -39,7 +39,8 @@ public class JsonStructureFocusedGenerationTest {
         Object[][] fixtures = {
                 {"json-structure-safe.yaml", "PrimitiveRecord"},
                 {"json-structure-containers.yaml", "Catalog"},
-                {"json-structure-mixed.yaml", "Event"}
+                {"json-structure-mixed.yaml", "Event"},
+                {"json-structure-namespaces.yaml", "Consumer"}
         };
         Object[][] result = new Object[generators.length * fixtures.length][3];
         int index = 0;
@@ -49,6 +50,78 @@ public class JsonStructureFocusedGenerationTest {
             }
         }
         return result;
+    }
+
+    @DataProvider(name = "namespaceGenerationMatrix")
+    public Object[][] namespaceGenerationMatrix() {
+        return new Object[][]{
+                {"java", "src/main/java/org/openapitools/client/model/Consumer.java",
+                        "src/main/java/org/openapitools/client/model/ConsumerCommonGeometryPoint.java",
+                        "src/main/java/org/openapitools/client/model/ConsumerCommonMetadataPoint.java"},
+                {"csharp", "src/Org.OpenAPITools/Model/Consumer.cs",
+                        "src/Org.OpenAPITools/Model/ConsumerCommonGeometryPoint.cs",
+                        "src/Org.OpenAPITools/Model/ConsumerCommonMetadataPoint.cs"},
+                {"go", "model_consumer.go",
+                        "model_consumer_common_geometry_point.go",
+                        "model_consumer_common_metadata_point.go"},
+                {"python", "openapi_client/models/consumer.py",
+                        "openapi_client/models/consumer_common_geometry_point.py",
+                        "openapi_client/models/consumer_common_metadata_point.py"},
+                {"typescript-fetch", "models/Consumer.ts",
+                        "models/ConsumerCommonGeometryPoint.ts",
+                        "models/ConsumerCommonMetadataPoint.ts"},
+                {"kotlin", "src/main/kotlin/org/openapitools/client/models/Consumer.kt",
+                        "src/main/kotlin/org/openapitools/client/models/ConsumerCommonGeometryPoint.kt",
+                        "src/main/kotlin/org/openapitools/client/models/ConsumerCommonMetadataPoint.kt"},
+                {"rust", "src/models/consumer.rs",
+                        "src/models/consumer_common_geometry_point.rs",
+                        "src/models/consumer_common_metadata_point.rs"},
+                {"php", "lib/Model/Consumer.php",
+                        "lib/Model/ConsumerCommonGeometryPoint.php",
+                        "lib/Model/ConsumerCommonMetadataPoint.php"}
+        };
+    }
+
+    @Test(dataProvider = "namespaceGenerationMatrix")
+    public void preservesQualifiedNamespacesInGeneratedModelNames(
+            String generatorName,
+            String rootModelPath,
+            String geometryModelPath,
+            String metadataModelPath) throws IOException {
+        Path target = Files.createTempDirectory("json-structure-namespaces-" + generatorName);
+        try {
+            ClientOptInput input = new CodegenConfigurator()
+                    .setGeneratorName(generatorName)
+                    .setInputSpec(RESOURCE_ROOT + "json-structure-namespaces.yaml")
+                    .setOutputDir(target.toAbsolutePath().toString())
+                    .toClientOptInput();
+
+            new DefaultGenerator().opts(input).generate();
+
+            Path rootModel = target.resolve(rootModelPath);
+            Assert.assertTrue(Files.isRegularFile(rootModel), generatorName + " did not generate the root model");
+            Assert.assertTrue(
+                    Files.isRegularFile(target.resolve(geometryModelPath)),
+                    generatorName + " lost the Common.Geometry namespace");
+            Assert.assertTrue(
+                    Files.isRegularFile(target.resolve(metadataModelPath)),
+                    generatorName + " lost the Common.Metadata namespace");
+            String rootSource = Files.readString(rootModel);
+            Assert.assertTrue(
+                    rootSource.contains("ConsumerCommonGeometryPoint"),
+                    generatorName + " root model does not reference the Common.Geometry type");
+            Assert.assertTrue(
+                    rootSource.contains("ConsumerCommonMetadataPoint"),
+                    generatorName + " root model does not reference the Common.Metadata type");
+            if ("typescript-fetch".equals(generatorName)) {
+                String geometrySource = Files.readString(target.resolve(geometryModelPath));
+                Assert.assertFalse(
+                        geometrySource.contains("from './number'"),
+                        "TypeScript primitive fields must not import a synthetic number model");
+            }
+        } finally {
+            target.toFile().deleteOnExit();
+        }
     }
 
     @Test(dataProvider = "strictGenerationMatrix")

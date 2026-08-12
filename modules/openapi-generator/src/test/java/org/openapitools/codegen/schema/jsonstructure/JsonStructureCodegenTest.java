@@ -31,7 +31,7 @@ public class JsonStructureCodegenTest {
                 + "components:\n"
                 + "  schemas:\n"
                 + "    Measurement:\n"
-                + "      $schema: https://json-structure.org/meta/core/v0/#\n"
+                + "      $schema: https://json-structure.org/meta/extended/v0/#\n"
                 + "      $id: https://api.example.com/schemas/measurement\n"
                 + "      name: Measurement\n"
                 + "      type: object\n"
@@ -72,7 +72,7 @@ public class JsonStructureCodegenTest {
                 + "components:\n"
                 + "  schemas:\n"
                 + "    Measurement:\n"
-                + "      $schema: https://json-structure.org/meta/core/v0/#\n"
+                + "      $schema: https://json-structure.org/meta/extended/v0/#\n"
                 + "      $id: https://api.example.com/measurement\n"
                 + "      name: Measurement\n"
                 + "      type: object\n"
@@ -215,5 +215,71 @@ public class JsonStructureCodegenTest {
         JsonStructureModelCatalog catalog = new JsonStructureModelCatalog(graph);
 
         assertTrue(catalog.modelNames().stream().anyMatch(name -> name.toLowerCase().contains("payload")));
+    }
+
+    @Test
+    public void exposesEffectiveNamespacesAndOriginalIdentitiesToGenerators() throws Exception {
+        String source = "openapi: 3.1.0\n"
+                + "components:\n"
+                + "  schemas:\n"
+                + "    Shared:\n"
+                + "      $schema: https://json-structure.org/meta/extended/v0/#\n"
+                + "      $id: https://api.example.com/shared\n"
+                + "      definitions:\n"
+                + "        Geometry:\n"
+                + "          Point:\n"
+                + "            name: Point\n"
+                + "            type: object\n"
+                + "            properties:\n"
+                + "              x: { type: double }\n"
+                + "    Consumer:\n"
+                + "      $schema: https://json-structure.org/meta/extended/v0/#\n"
+                + "      $id: https://api.example.com/consumer\n"
+                + "      $root: '#/definitions/Envelope'\n"
+                + "      definitions:\n"
+                + "        Common:\n"
+                + "          $importdefs: https://api.example.com/shared\n"
+                + "        Envelope:\n"
+                + "          name: Envelope\n"
+                + "          type: object\n"
+                + "          properties:\n"
+                + "            point:\n"
+                + "              type: { $ref: '#/definitions/Common/Geometry/Point' }\n";
+
+        JsonStructureTypeGraph graph = new JsonStructureResolver().resolve(Yaml.mapper().readTree(source));
+        JsonStructureModelCatalog catalog = new JsonStructureModelCatalog(graph);
+        DefaultCodegen codegen = new DefaultCodegen();
+        codegen.setOpenAPI(new OpenAPI().openapi("3.1.0").components(new Components()));
+        codegen.prepareJsonStructureTypes(graph, catalog);
+
+        String pointModelName = "Consumer_Common_Geometry_Point";
+        CodegenModel pointModel = codegen.fromJsonStructureType(
+                pointModelName, catalog.declaration(pointModelName), graph, catalog);
+        CodegenModel consumerModel = codegen.fromJsonStructureType(
+                "Consumer", catalog.declaration("Consumer"), graph, catalog);
+        CodegenProperty pointProperty = consumerModel.getVars().stream()
+                .filter(property -> "point".equals(property.getBaseName()))
+                .findFirst()
+                .orElseThrow();
+
+        assertEquals(pointModel.getSchemaResourceId(), "https://api.example.com/consumer");
+        assertEquals(pointModel.getSchemaSourceId(), "https://api.example.com/shared");
+        assertEquals(pointModel.getSchemaNamespace(), "Common.Geometry");
+        assertEquals(
+                pointModel.getSchemaQualifiedName(),
+                "https://api.example.com/consumer#Common.Geometry.Point");
+        assertEquals(
+                pointModel.getVendorExtensions().get(JsonStructureSchemaMapper.X_ORIGIN),
+                "https://api.example.com/shared#Geometry.Point");
+
+        assertEquals(pointProperty.getSchemaResourceId(), "https://api.example.com/consumer");
+        assertEquals(pointProperty.getSchemaSourceId(), "https://api.example.com/shared");
+        assertEquals(pointProperty.getSchemaNamespace(), "Common.Geometry");
+        assertEquals(
+                pointProperty.getSchemaQualifiedName(),
+                "https://api.example.com/consumer#Common.Geometry.Point");
+        assertEquals(
+                pointProperty.getVendorExtensions().get(JsonStructureSchemaMapper.X_ORIGIN),
+                "https://api.example.com/shared#Geometry.Point");
     }
 }

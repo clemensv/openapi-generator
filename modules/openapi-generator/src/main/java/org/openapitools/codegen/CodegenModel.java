@@ -70,7 +70,11 @@ public class CodegenModel implements IJsonSchemaValidationProperties {
     @Getter @Setter
     public String schemaSourceId;
     @Getter @Setter
+    public String schemaResourceId;
+    @Getter @Setter
     public String schemaNamespace;
+    @Getter @Setter
+    public String schemaQualifiedName;
     @Getter @Setter
     public boolean abstractSchema;
     @Getter @Setter
