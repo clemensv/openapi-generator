@@ -89,3 +89,19 @@ JSON Structure Schema Objects currently need to be declared under
 `components.schemas`. Inline JSON Structure schemas in operations, parameters,
 headers, callbacks, or webhooks are rejected with an explicit diagnostic;
 reference a component Schema Object instead.
+
+## Focused conformance suite
+
+JSON Structure coverage uses a compact set of canonical descriptions rather
+than duplicating the large JSON Schema sample corpus:
+
+- safe primitive and annotation mappings;
+- arrays, sets, maps, nested named objects, and typed additional properties;
+- in-description imports, namespaces, and structural inheritance;
+- mixed OAS/JSON Schema and JSON Structure components;
+- advanced tuple, choice, union, alternative-required, numeric wire, and
+  binary wire shapes.
+
+Strict-safe descriptions are generated with Java, C#, Go, Python,
+TypeScript Fetch, Kotlin, Rust, and PHP. Advanced wire shapes verify both the
+default strict diagnostic and the explicit compatibility-mode path.

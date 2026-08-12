@@ -1,0 +1,50 @@
+openapi: 3.1.0
+info:
+  title: JSON Structure containers
+  version: 1.0.0
+paths:
+  /catalog:
+    get:
+      operationId: getCatalog
+      responses:
+        '200':
+          description: Catalog
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Catalog'
+components:
+  schemas:
+    Catalog:
+      $schema: https://json-structure.org/meta/core/v0/#
+      $id: https://api.example.com/schemas/catalog
+      name: Catalog
+      type: object
+      required:
+        - items
+      properties:
+        items:
+          type: array
+          items:
+            type: string
+        labels:
+          type: set
+          items:
+            type: string
+        attributes:
+          type: map
+          values:
+            type: string
+        owner:
+          name: Owner
+          type: object
+          required:
+            - name
+          properties:
+            name:
+              type: string
+            email:
+              type: string
+          additionalProperties:
+            type: string
+      additionalProperties: false

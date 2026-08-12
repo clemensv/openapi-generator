@@ -30,6 +30,15 @@ public final class JsonStructureSchemaMapper {
     public static final String X_REQUIRED_ALTERNATIVES = "x-json-structure-required-alternatives";
     public static final String X_TUPLE_ORDER = "x-json-structure-tuple-order";
     public static final String X_BASES = "x-json-structure-bases";
+    private final boolean compatibilityMode;
+
+    public JsonStructureSchemaMapper() {
+        this(false);
+    }
+
+    public JsonStructureSchemaMapper(boolean compatibilityMode) {
+        this.compatibilityMode = compatibilityMode;
+    }
 
     public Schema<?> toSchema(
             JsonStructureTypeDeclaration declaration,
@@ -130,6 +139,17 @@ public final class JsonStructureSchemaMapper {
             JsonStructureTypeDeclaration declaration,
             JsonStructureTypeGraph graph,
             JsonStructureModelCatalog catalog) {
+        if (compatibilityMode) {
+            ObjectSchema choice = new ObjectSchema();
+            declaration.getChoices().forEach((name, type) ->
+                    choice.addProperty(name, typeUseSchema(type, graph, catalog)));
+            choice.addExtension(
+                    X_REQUIRED_ALTERNATIVES,
+                    declaration.getChoices().keySet().stream()
+                            .map(List::of)
+                            .collect(Collectors.toList()));
+            return choice;
+        }
         ComposedSchema choice = new ComposedSchema();
         Map<String, String> mappings = new LinkedHashMap<>();
         declaration.getChoices().forEach((name, type) -> {

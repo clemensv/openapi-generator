@@ -2752,7 +2752,7 @@ public class DefaultCodegen implements CodegenConfig {
         if (openAPI.getComponents().getSchemas() == null) {
             openAPI.getComponents().setSchemas(new LinkedHashMap<>());
         }
-        JsonStructureSchemaMapper mapper = new JsonStructureSchemaMapper();
+        JsonStructureSchemaMapper mapper = new JsonStructureSchemaMapper(jsonStructureCompatibilityMode);
         catalog.schemaNames().forEach(modelName ->
                 openAPI.getComponents().getSchemas().put(
                         modelName,

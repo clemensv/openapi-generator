@@ -131,35 +131,6 @@ public class DefaultGeneratorTest {
         }
     }
 
-    @DataProvider(name = "representativeJsonStructureGenerators")
-    public Object[][] representativeJsonStructureGenerators() {
-        return new Object[][]{
-                {"java"},
-                {"csharp"},
-                {"go"},
-                {"python"},
-                {"typescript-fetch"}
-        };
-    }
-
-    @Test(dataProvider = "representativeJsonStructureGenerators")
-    public void routesJsonStructureThroughMaintainedGenerators(String generatorName) throws IOException {
-        Path target = Files.createTempDirectory("json-structure-" + generatorName);
-        try {
-            ClientOptInput input = new CodegenConfigurator()
-                    .setGeneratorName(generatorName)
-                    .setInputSpec("src/test/resources/3_1/json-structure-mixed.yaml")
-                    .setOutputDir(target.toAbsolutePath().toString())
-                    .toClientOptInput();
-
-            List<File> generated = new DefaultGenerator().opts(input).generate();
-
-            Assert.assertFalse(generated.isEmpty(), generatorName);
-        } finally {
-            target.toFile().deleteOnExit();
-        }
-    }
-
     @Test
     public void rejectsInlineJsonStructureSchemas() throws IOException {
         Path input = Files.createTempFile("json-structure-inline", ".yaml");
