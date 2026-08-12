@@ -58,6 +58,9 @@ public abstract class AbstractOptionsTest {
         final Set<String> testOptions = optionsProvider.createOptions().keySet();
         final Set<String> skipped = new HashSet<String>(cliOptions);
         skipped.removeAll(testOptions);
+        // JSON Structure compatibility is a shared dialect fallback covered by common codegen tests,
+        // not a language-specific behavior that every generator options provider must duplicate.
+        skipped.remove(CodegenConstants.JSON_STRUCTURE_COMPATIBILITY_MODE);
         if (!skipped.isEmpty()) {
             Assert.fail(String.format(Locale.ROOT, "These options weren't checked: %s.", StringUtils.join(skipped, ", ")));
         }
