@@ -283,6 +283,29 @@ public class JsonStructureOasBindingTest {
     }
 
     @Test
+    public void rejectsDuplicateAggregateResourceNames() throws Exception {
+        String source = "openapi: 3.1.0\n"
+                + "components:\n"
+                + "  schemas:\n"
+                + "    First:\n"
+                + "      $schema: https://json-structure.org/meta/core/v0/#\n"
+                + "      $id: https://example.com/first\n"
+                + "      name: SharedName\n"
+                + "      definitions: {}\n"
+                + "    Second:\n"
+                + "      $schema: https://json-structure.org/meta/core/v0/#\n"
+                + "      $id: https://example.com/second\n"
+                + "      name: SharedName\n"
+                + "      definitions: {}\n";
+
+        JsonStructureResolutionException exception = expectThrows(
+                JsonStructureResolutionException.class,
+                () -> new JsonStructureResolver().resolve(Yaml.mapper().readTree(source)));
+
+        assertTrue(exception.getMessage().contains("Duplicate JSON Structure resource name SharedName"));
+    }
+
+    @Test
     public void allowsConfiguredCoreDerivedMetaSchemaToActivateImports() throws Exception {
         String customUri = "https://example.com/meta/core-with-import";
         String source = "openapi: 3.1.0\n"
@@ -422,7 +445,7 @@ public class JsonStructureOasBindingTest {
     }
 
     @Test(dataProvider = "rootTypes")
-    public void requiresNameForEveryTypedComponentResourceRoot(String typeBody) throws Exception {
+    public void materializesNameForEveryTypedComponentResourceRoot(String typeBody) throws Exception {
         String source = "openapi: 3.1.0\n"
                 + "jsonSchemaDialect: " + SchemaDialectDetector.JSON_STRUCTURE_CORE + "\n"
                 + "components:\n"
@@ -430,15 +453,11 @@ public class JsonStructureOasBindingTest {
                 + "    Value:\n"
                 + "      $id: https://example.com/value\n"
                 + indent(typeBody, 6);
-        assertThrows(
-                JsonStructureResolutionException.class,
-                () -> new JsonStructureResolver().resolve(Yaml.mapper().readTree(source)));
+        JsonStructureTypeGraph graph =
+                new JsonStructureResolver().resolve(Yaml.mapper().readTree(source));
 
-        String named = source.replace(
-                "      $id: https://example.com/value\n",
-                "      $id: https://example.com/value\n      name: Value\n");
-        assertTrue(new JsonStructureResolver().resolve(Yaml.mapper().readTree(named))
-                .getComponentRoots().containsKey("Value"));
+        assertTrue(graph.getComponentRoots().containsKey("Value"));
+        assertEquals(graph.getResources().get("Value").getDocumentName(), "Value");
     }
 
     private void assertMaterializedId(
@@ -453,6 +472,7 @@ public class JsonStructureOasBindingTest {
         JsonNode materialized = adapter.resources.get("Value");
         assertEquals(materialized.path("$schema").textValue(), SchemaDialectDetector.JSON_STRUCTURE_CORE);
         assertEquals(materialized.path("$id").textValue(), expectedId);
+        assertEquals(materialized.path("name").textValue(), "Value");
         assertEquals(graph.getComponentRoots().get("Value").getResourceId().toString(), expectedId);
     }
 

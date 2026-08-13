@@ -1,6 +1,7 @@
 package org.openapitools.codegen.serializer;
 
 import com.fasterxml.jackson.core.JsonProcessingException;
+import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.MapperFeature;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.fasterxml.jackson.databind.module.SimpleModule;
@@ -24,7 +25,23 @@ public class SerializerUtils {
     }
 
     public static String toYamlString(OpenAPI openAPI, boolean sortOutput) {
-        if (openAPI == null) {
+        return toYamlString((Object) openAPI, sortOutput);
+    }
+
+    public static String toYamlString(JsonNode document) {
+        return toYamlString(document, false);
+    }
+
+    public static String toYamlString(JsonNode document, boolean sortOutput) {
+        return toYamlString((Object) document, sortOutput);
+    }
+
+    public static String toYamlString(Object document) {
+        return toYamlString(document, false);
+    }
+
+    public static String toYamlString(Object document, boolean sortOutput) {
+        if (document == null) {
             return null;
         }
         SimpleModule module = createModule(sortOutput);
@@ -40,7 +57,7 @@ public class SerializerUtils {
             }
             return yamlMapper.registerModule(module)
                     .configure(MapperFeature.SORT_PROPERTIES_ALPHABETICALLY, true)
-                    .writeValueAsString(openAPI)
+                    .writeValueAsString(document)
                     .replace("\r\n", "\n");
         } catch (JsonProcessingException e) {
             LOGGER.warn("Can not create yaml content", e);
@@ -53,7 +70,23 @@ public class SerializerUtils {
     }
 
     public static String toJsonString(OpenAPI openAPI, boolean sortOutput) {
-        if (openAPI == null) {
+        return toJsonString((Object) openAPI, sortOutput);
+    }
+
+    public static String toJsonString(JsonNode document) {
+        return toJsonString(document, false);
+    }
+
+    public static String toJsonString(JsonNode document, boolean sortOutput) {
+        return toJsonString((Object) document, sortOutput);
+    }
+
+    public static String toJsonString(Object document) {
+        return toJsonString(document, false);
+    }
+
+    public static String toJsonString(Object document, boolean sortOutput) {
+        if (document == null) {
             return null;
         }
 
@@ -64,7 +97,7 @@ public class SerializerUtils {
                     .registerModule(module)
                     .configure(MapperFeature.SORT_PROPERTIES_ALPHABETICALLY, true)
                     .writerWithDefaultPrettyPrinter()
-                    .writeValueAsString(openAPI)
+                    .writeValueAsString(document)
                     .replace("\r\n", "\n");
         } catch (JsonProcessingException e) {
             LOGGER.warn("Can not create json content", e);

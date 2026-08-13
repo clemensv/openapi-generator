@@ -26,6 +26,13 @@ components:
             required: [x]
             properties:
               x: { type: double }
+          Vector:
+            name: Vector
+            type: object
+            required: [x, y]
+            properties:
+              x: { type: double }
+              y: { type: double }
         Metadata:
           Point:
             name: Point
@@ -43,7 +50,7 @@ components:
         Envelope:
           name: Envelope
           type: object
-          required: [geometry, metadata]
+          required: [geometry, metadata, vectors]
           properties:
             geometry:
               type:
@@ -51,3 +58,8 @@ components:
             metadata:
               type:
                 $ref: '#/definitions/Common/Metadata/Point'
+            vectors:
+              type: array
+              items:
+                type:
+                  $ref: '#/definitions/Common/Geometry/Vector'

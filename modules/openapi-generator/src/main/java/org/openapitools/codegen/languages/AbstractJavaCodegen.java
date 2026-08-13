@@ -51,6 +51,14 @@ import org.openapitools.codegen.model.ModelMap;
 import org.openapitools.codegen.model.ModelsMap;
 import org.openapitools.codegen.model.OperationMap;
 import org.openapitools.codegen.model.OperationsMap;
+import org.openapitools.codegen.schema.jsonstructure.JsonStructureModelCatalog;
+import org.openapitools.codegen.schema.jsonstructure.JsonStructureResource;
+import org.openapitools.codegen.schema.jsonstructure.JsonStructureTypeAlternative;
+import org.openapitools.codegen.schema.jsonstructure.JsonStructureTypeDeclaration;
+import org.openapitools.codegen.schema.jsonstructure.JsonStructureTypeGraph;
+import org.openapitools.codegen.schema.jsonstructure.JsonStructureTypeKind;
+import org.openapitools.codegen.schema.jsonstructure.JsonStructureTypeUse;
+import org.openapitools.codegen.schema.jsonstructure.QualifiedTypeName;
 import org.openapitools.codegen.utils.CamelizeOption;
 import org.openapitools.codegen.utils.ModelUtils;
 import org.slf4j.Logger;
@@ -97,6 +105,7 @@ public abstract class AbstractJavaCodegen extends DefaultCodegen implements Code
     public static final String IGNORE_ANYOF_IN_ENUM = "ignoreAnyOfInEnum";
     public static final String ADDITIONAL_MODEL_TYPE_ANNOTATIONS = "additionalModelTypeAnnotations";
     public static final String X_IMPLEMENTS_SKIP = "xImplementsSkip";
+    public static final String X_JSON_STRUCTURE_JAVA_FQCN = "x-json-structure-java-fqcn";
     public static final String SCHEMA_IMPLEMENTS = "schemaImplements";
     public static final String ADDITIONAL_ONE_OF_TYPE_ANNOTATIONS = "additionalOneOfTypeAnnotations";
     public static final String ADDITIONAL_ENUM_TYPE_ANNOTATIONS = "additionalEnumTypeAnnotations";
@@ -1082,6 +1091,157 @@ public abstract class AbstractJavaCodegen extends DefaultCodegen implements Code
         schemaKeyToModelNameCache.put(origName, camelizedName);
 
         return camelizedName;
+    }
+
+    @Override
+    public String jsonStructureModelPackage(
+            JsonStructureTypeDeclaration declaration,
+            JsonStructureTypeGraph graph) {
+        JsonStructureResource resource = graph.resource(declaration.getName());
+        if (resource == null || resource.getDocumentName() == null) {
+            return modelPackage();
+        }
+        return modelPackage() + "." + jsonStructureResourcePackageSegment(resource);
+    }
+
+    @Override
+    public CodegenModel fromJsonStructureType(
+            String name,
+            JsonStructureTypeDeclaration declaration,
+            JsonStructureTypeGraph graph,
+            JsonStructureModelCatalog catalog) {
+        CodegenModel model = super.fromJsonStructureType(name, declaration, graph, catalog);
+        if (declaration.getKind() == JsonStructureTypeKind.OBJECT
+                || declaration.getKind() == JsonStructureTypeKind.TUPLE
+                || declaration.getKind() == JsonStructureTypeKind.CHOICE) {
+            model.isAlias = false;
+        }
+        Set<QualifiedTypeName> referencedTypes = new LinkedHashSet<>();
+        graph.effectiveProperties(declaration.getName()).values()
+                .forEach(type -> collectJsonStructureReferences(type, referencedTypes));
+        collectJsonStructureReferences(declaration.getItems(), referencedTypes);
+        collectJsonStructureReferences(declaration.getValues(), referencedTypes);
+        collectJsonStructureReferences(declaration.getDeclaredType(), referencedTypes);
+        declaration.getChoices().values()
+                .forEach(type -> collectJsonStructureReferences(type, referencedTypes));
+        referencedTypes.addAll(declaration.getBases());
+        for (QualifiedTypeName referencedType : referencedTypes) {
+            String referencedModel = catalog.modelName(referencedType);
+            JsonStructureTypeDeclaration referencedDeclaration =
+                    catalog.declaration(referencedModel);
+            boolean generatedClass = catalog.isGeneratedModel(referencedModel)
+                    && referencedDeclaration != null
+                    && (referencedDeclaration.getKind() == JsonStructureTypeKind.OBJECT
+                    || referencedDeclaration.getKind() == JsonStructureTypeKind.TUPLE
+                    || referencedDeclaration.getKind() == JsonStructureTypeKind.CHOICE);
+            if (!generatedClass) {
+                model.imports.remove(toModelName(referencedModel));
+                model.imports.remove(referencedModel);
+                continue;
+            }
+            model.imports.remove(toModelName(referencedModel));
+            model.imports.add(referencedModel);
+        }
+        for (String catalogModel : catalog.modelNames()) {
+            String javaModelName = toModelName(catalogModel);
+            if (!model.imports.contains(javaModelName)) {
+                continue;
+            }
+            JsonStructureTypeDeclaration referencedDeclaration = catalog.declaration(catalogModel);
+            model.imports.remove(javaModelName);
+            if (catalog.isGeneratedModel(catalogModel)
+                    && referencedDeclaration != null
+                    && (referencedDeclaration.getKind() == JsonStructureTypeKind.OBJECT
+                    || referencedDeclaration.getKind() == JsonStructureTypeKind.TUPLE
+                    || referencedDeclaration.getKind() == JsonStructureTypeKind.CHOICE)) {
+                model.imports.add(catalogModel);
+            }
+        }
+        String packageName = jsonStructureModelPackage(declaration, graph);
+        if ((!model.oneOf.isEmpty() || !model.anyOf.isEmpty())
+                && !packageName.equals(modelPackage())) {
+            model.imports.add("AbstractOpenApiSchema");
+        }
+        model.vendorExtensions.put(
+                X_JSON_STRUCTURE_JAVA_FQCN,
+                packageName + "." + model.classname);
+        if (model.discriminator != null) {
+            for (CodegenDiscriminator.MappedModel mappedModel : model.discriminator.getMappedModels()) {
+                JsonStructureTypeDeclaration mappedDeclaration =
+                        catalog.declaration(mappedModel.getSchemaName());
+                if (mappedDeclaration != null) {
+                    mappedModel.setModelFqcn(
+                            jsonStructureModelPackage(mappedDeclaration, graph)
+                                    + "." + toModelName(mappedModel.getSchemaName()));
+                }
+            }
+        }
+        return model;
+    }
+
+    private void collectJsonStructureReferences(
+            JsonStructureTypeUse type,
+            Set<QualifiedTypeName> references) {
+        if (type == null) {
+            return;
+        }
+        for (JsonStructureTypeAlternative alternative : type.getAlternatives()) {
+            if (alternative.isReference()) {
+                references.add(alternative.getReference());
+            }
+        }
+    }
+
+    @Override
+    public String toModelImport(String name) {
+        JsonStructureTypeDeclaration declaration =
+                jsonStructureModelCatalog == null ? null : jsonStructureModelCatalog.declaration(name);
+        if (declaration == null || jsonStructureTypeGraph == null) {
+            return super.toModelImport(name);
+        }
+        return jsonStructureModelPackage(declaration, jsonStructureTypeGraph)
+                + "." + toModelName(name);
+    }
+
+    @Override
+    public String modelFilename(String templateName, String modelName) {
+        String suffix = modelTemplateFiles().get(templateName);
+        JsonStructureTypeDeclaration declaration =
+                jsonStructureModelCatalog == null ? null : jsonStructureModelCatalog.declaration(modelName);
+        if (declaration == null || !".java".equals(suffix)) {
+            return super.modelFilename(templateName, modelName);
+        }
+        return modelFileFolder()
+                + File.separator + jsonStructureResourceFolder(declaration)
+                + File.separator + toModelFilename(modelName) + suffix;
+    }
+
+    @Override
+    public String modelFilename(String templateName, String modelName, String outputDir) {
+        String suffix = modelTemplateFiles().get(templateName);
+        JsonStructureTypeDeclaration declaration =
+                jsonStructureModelCatalog == null ? null : jsonStructureModelCatalog.declaration(modelName);
+        if (declaration == null || !".java".equals(suffix)) {
+            return super.modelFilename(templateName, modelName, outputDir);
+        }
+        return outputDir
+                + File.separator + jsonStructureResourceFolder(declaration)
+                + File.separator + toModelFilename(modelName) + suffix;
+    }
+
+    private String jsonStructureResourceFolder(JsonStructureTypeDeclaration declaration) {
+        JsonStructureResource resource = jsonStructureTypeGraph.resource(declaration.getName());
+        return resource == null || resource.getDocumentName() == null
+                ? "JsonStructure"
+                : jsonStructureResourcePackageSegment(resource);
+    }
+
+    private String jsonStructureResourcePackageSegment(JsonStructureResource resource) {
+        String segment = sanitizePackageName(resource.getDocumentName()).replace('.', '_');
+        if (isReservedWord(segment) || segment.matches("^\\d.*")) {
+            return escapeReservedWord(segment);
+        }
+        return segment;
     }
 
     @Override

@@ -119,6 +119,9 @@ public final class JsonStructureResolver {
             ResourceDraft resource = parseResource(
                     componentName, resourceNode, baseUri, dialect, metaSchemaUri,
                     customMetaSchemas, customMetaSchemaOffers);
+            if (resource.documentName == null) {
+                resource.documentName = componentName;
+            }
             ResourceDraft previous = resourcesById.putIfAbsent(resource.id.toString(), resource);
             if (previous != null) {
                 throw new JsonStructureResolutionException(
@@ -130,6 +133,7 @@ public final class JsonStructureResolver {
             }
             resources.put(componentName, resource);
         });
+        validateUniqueDocumentNames(resources.values());
 
         externalResources.forEach((id, node) -> {
             String metaSchemaUri = requiredText(node, "$schema", "external resource " + id);
@@ -224,10 +228,26 @@ public final class JsonStructureResolver {
                 if (!object.has("$id") && baseUri != null) {
                     object.put("$id", defaultId(baseUri, componentName).toString());
                 }
+                if (!object.has("name")) {
+                    object.put("name", componentName);
+                }
             }
             resources.put(componentName, materialized);
         });
         return resources;
+    }
+
+    private void validateUniqueDocumentNames(Iterable<ResourceDraft> resources) {
+        Map<String, String> componentsByDocumentName = new LinkedHashMap<>();
+        for (ResourceDraft resource : resources) {
+            String previous = componentsByDocumentName.putIfAbsent(
+                    resource.documentName, resource.componentName);
+            if (previous != null) {
+                throw new JsonStructureResolutionException(
+                        "Duplicate JSON Structure resource name " + resource.documentName
+                                + " in components " + previous + " and " + resource.componentName);
+            }
+        }
     }
 
     private ResourceDraft parseResource(
@@ -293,9 +313,10 @@ public final class JsonStructureResolver {
             String rootPointer = requiredText(node, "$root", componentName);
             resource.root = pointerToName(id, rootPointer);
         } else if (hasType) {
-            // The OAS binding requires a name for every extracted root type, not
-            // only for object/tuple as the stale v0 meta-schema suggests.
-            String rootName = requiredText(node, "name", componentName);
+            String rootName = optionalText(node, "name", componentName);
+            if (rootName == null) {
+                rootName = componentName;
+            }
             validateIdentifier(rootName, "Root type");
             JsonNode rootType = node.get("type");
             if (rootType.isArray()) {
@@ -469,7 +490,7 @@ public final class JsonStructureResolver {
         }
 
         JsonStructureTypeKind kind = declarationKind(node, qualifiedName.toString());
-        validateDeclarationName(qualifiedName, name, node, rootDeclaration);
+        validateDeclarationName(qualifiedName, name, node);
 
         JsonStructureTypeUse declaredType = isStructuralCompound(kind)
                 ? null
@@ -808,16 +829,11 @@ public final class JsonStructureResolver {
     private void validateDeclarationName(
             QualifiedTypeName qualifiedName,
             String addressName,
-            JsonNode node,
-            boolean rootDeclaration) {
+            JsonNode node) {
         String declaredName = optionalText(node, "name", qualifiedName.toString());
-        if (rootDeclaration && declaredName == null) {
-            throw new JsonStructureResolutionException(
-                    "Root declaration " + qualifiedName + " must declare name");
-        }
         // Embedded schemas get their identity from their property/definition key.
-        // This follows the draft schema-element rule and avoids imposing the
-        // stale meta-schema omissions/inconsistent object prose on definitions.
+        // Extracted roots without an explicit name are materialized from their
+        // stable OAS component address before validation.
         if (declaredName != null) {
             validateIdentifier(declaredName, "Type");
             if (!declaredName.equals(addressName)) {

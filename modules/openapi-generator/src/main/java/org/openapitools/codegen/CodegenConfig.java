@@ -17,6 +17,7 @@
 
 package org.openapitools.codegen;
 
+import com.fasterxml.jackson.databind.JsonNode;
 import com.samskivert.mustache.Mustache.Compiler;
 import io.swagger.v3.oas.models.OpenAPI;
 import io.swagger.v3.oas.models.Operation;
@@ -144,6 +145,19 @@ public interface CodegenConfig {
     default void prepareJsonStructureTypes(
             JsonStructureTypeGraph graph,
             JsonStructureModelCatalog catalog) {
+    }
+
+    default String jsonStructureModelPackage(
+            JsonStructureTypeDeclaration declaration,
+            JsonStructureTypeGraph graph) {
+        return modelPackage();
+    }
+
+    default void setRawOpenAPI(JsonNode rawOpenAPI) {
+    }
+
+    default JsonNode getRawOpenAPI() {
+        return null;
     }
 
     CodegenOperation fromOperation(String resourcePath, String httpMethod, Operation operation, List<Server> servers);

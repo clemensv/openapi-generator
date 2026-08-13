@@ -55,14 +55,14 @@ public class JSON {
 
     public static GsonBuilder createGson() {
         GsonFireBuilder fireBuilder = new GsonFireBuilder()
-        {{#models}}{{#model}}{{#discriminator}}  .registerTypeSelector({{classname}}.class, new TypeSelector() {
+        {{#models}}{{#model}}{{#discriminator}}  .registerTypeSelector({{#vendorExtensions.x-json-structure-java-fqcn}}{{{vendorExtensions.x-json-structure-java-fqcn}}}{{/vendorExtensions.x-json-structure-java-fqcn}}{{^vendorExtensions.x-json-structure-java-fqcn}}{{classname}}{{/vendorExtensions.x-json-structure-java-fqcn}}.class, new TypeSelector() {
             @Override
             public Class getClassForElement(JsonElement readElement) {
                 Map classByDiscriminatorValue = new HashMap();
                 {{#mappedModels}}
                 classByDiscriminatorValue.put("{{mappingName}}".toUpperCase(Locale.ROOT), {{modelName}}.class);
                 {{/mappedModels}}
-                classByDiscriminatorValue.put("{{classname}}".toUpperCase(Locale.ROOT), {{classname}}.class);
+                classByDiscriminatorValue.put("{{classname}}".toUpperCase(Locale.ROOT), {{#vendorExtensions.x-json-structure-java-fqcn}}{{{vendorExtensions.x-json-structure-java-fqcn}}}{{/vendorExtensions.x-json-structure-java-fqcn}}{{^vendorExtensions.x-json-structure-java-fqcn}}{{classname}}{{/vendorExtensions.x-json-structure-java-fqcn}}.class);
                 return getClassByDiscriminator(
                             classByDiscriminatorValue,
                             getDiscriminatorValue(readElement, "{{{propertyName}}}"));

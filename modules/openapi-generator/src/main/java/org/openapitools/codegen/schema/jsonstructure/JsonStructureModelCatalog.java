@@ -27,18 +27,26 @@ public final class JsonStructureModelCatalog {
         this.reservedModelNames = new LinkedHashSet<>(reservedModelNames);
         this.reservedModelNames.removeAll(graph.getComponentRoots().keySet());
         this.resourceComponentNames = new LinkedHashSet<>(graph.getComponentByResourceId().values());
+        Set<String> rootedResourceIds = graph.getComponentRoots().values().stream()
+                .map(QualifiedTypeName::getResourceIdentity)
+                .collect(java.util.stream.Collectors.toCollection(LinkedHashSet::new));
         graph.getComponentRoots().forEach((componentName, root) ->
                 register(componentName, graph.getDeclarations().get(root), true));
 
         graph.getDeclarations().values().forEach(declaration -> {
             if (!modelNamesByDeclaration.containsKey(declaration.getName())) {
-                String componentName = graph.getComponentByResourceId()
-                        .getOrDefault(declaration.getName().getResourceIdentity(), "JsonStructure");
-                String candidate = componentName + "_" + declaration.getName().displayName().replace('.', '_');
+                JsonStructureResource resource = graph.resource(declaration.getName());
+                String resourceNamespace = resource == null || resource.getDocumentName() == null
+                        ? graph.getComponentByResourceId()
+                                .getOrDefault(declaration.getName().getResourceIdentity(), "JsonStructure")
+                        : resource.getDocumentName();
+                String candidate =
+                        resourceNamespace + "_" + declaration.getName().displayName().replace('.', '_');
                 register(
                         uniqueName(candidate),
                         declaration,
-                        shouldGenerateModel(declaration));
+                        rootedResourceIds.contains(declaration.getName().getResourceIdentity())
+                                && shouldGenerateModel(declaration));
             }
         });
     }

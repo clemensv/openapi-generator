@@ -17,6 +17,7 @@
 
 package org.openapitools.codegen;
 
+import com.fasterxml.jackson.databind.JsonNode;
 import com.github.benmanes.caffeine.cache.Cache;
 import com.github.benmanes.caffeine.cache.Caffeine;
 import com.github.benmanes.caffeine.cache.Ticker;
@@ -64,6 +65,7 @@ import org.openapitools.codegen.model.ModelMap;
 import org.openapitools.codegen.model.ModelsMap;
 import org.openapitools.codegen.model.OperationsMap;
 import org.openapitools.codegen.model.WebhooksMap;
+import org.openapitools.codegen.schema.SchemaDialectDetector;
 import org.openapitools.codegen.schema.jsonstructure.JsonStructureModelCatalog;
 import org.openapitools.codegen.schema.jsonstructure.JsonStructureResource;
 import org.openapitools.codegen.schema.jsonstructure.JsonStructureSchemaMapper;
@@ -366,6 +368,9 @@ public class DefaultCodegen implements CodegenConfig {
 
     // make openapi available to all methods
     protected OpenAPI openAPI;
+    protected JsonNode rawOpenAPI;
+    protected JsonStructureTypeGraph jsonStructureTypeGraph;
+    protected JsonStructureModelCatalog jsonStructureModelCatalog;
 
     // A cache to efficiently lookup a Schema instance based on the return value of `toModelName()`.
     private Map<String, Schema> modelNameToSchemaCache;
@@ -2748,6 +2753,8 @@ public class DefaultCodegen implements CodegenConfig {
     public void prepareJsonStructureTypes(
             JsonStructureTypeGraph graph,
             JsonStructureModelCatalog catalog) {
+        this.jsonStructureTypeGraph = graph;
+        this.jsonStructureModelCatalog = catalog;
         validateJsonStructureCapabilities(graph);
         if (openAPI.getComponents() == null) {
             openAPI.setComponents(new Components());
@@ -8977,9 +8984,9 @@ public class DefaultCodegen implements CodegenConfig {
      * @param objs map of object
      */
     protected void generateJSONSpecFile(Map<String, Object> objs) {
-        OpenAPI openAPI = (OpenAPI) objs.get("openAPI");
-        if (openAPI != null) {
-            objs.put("openapi-json", SerializerUtils.toJsonString(openAPI));
+        Object source = openAPISpecForSerialization(objs);
+        if (source != null) {
+            objs.put("openapi-json", SerializerUtils.toJsonString(source));
         }
     }
 
@@ -8989,11 +8996,27 @@ public class DefaultCodegen implements CodegenConfig {
      * @param objs map of object
      */
     public void generateYAMLSpecFile(Map<String, Object> objs) {
-        OpenAPI openAPI = (OpenAPI) objs.get("openAPI");
-        String yaml = SerializerUtils.toYamlString(openAPI);
+        String yaml = SerializerUtils.toYamlString(openAPISpecForSerialization(objs));
         if (yaml != null) {
             objs.put("openapi-yaml", yaml);
         }
+    }
+
+    protected Object openAPISpecForSerialization(Map<String, Object> objs) {
+        if (SchemaDialectDetector.containsJsonStructureSchemas(rawOpenAPI)) {
+            return rawOpenAPI;
+        }
+        return objs.get("openAPI");
+    }
+
+    @Override
+    public void setRawOpenAPI(JsonNode rawOpenAPI) {
+        this.rawOpenAPI = rawOpenAPI;
+    }
+
+    @Override
+    public JsonNode getRawOpenAPI() {
+        return rawOpenAPI;
     }
 
     /**

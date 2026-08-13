@@ -94,7 +94,8 @@ public class DefaultGeneratorTest {
             new DefaultGenerator().opts(input).generate();
 
             String model = Files.readString(
-                    target.resolve("src/main/java/org/openapitools/client/model/Measurement.java"));
+                    target.resolve(
+                            "src/main/java/org/openapitools/client/model/Measurement/Measurement.java"));
             Assert.assertTrue(model.contains("private Long sequence;"), model);
             Assert.assertTrue(model.contains("private BigDecimal reading;"), model);
             Assert.assertTrue(model.contains("private Set<String> tags"), model);
@@ -119,7 +120,7 @@ public class DefaultGeneratorTest {
             new DefaultGenerator().opts(input).generate();
 
             String event = Files.readString(
-                    target.resolve("src/main/java/org/openapitools/client/model/Event.java"));
+                    target.resolve("src/main/java/org/openapitools/client/model/Event/Event.java"));
             String legacy = Files.readString(
                     target.resolve("src/main/java/org/openapitools/client/model/Legacy.java"));
             Assert.assertTrue(event.contains("private UUID id;"), event);

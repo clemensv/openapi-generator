@@ -127,11 +127,20 @@ add-ins. Referenced properties expose the same effective/source identity and
 contextual-reference metadata.
 
 The configured generator package or module remains authoritative. JSON
-Structure namespaces are preserved in metadata and flattened into generated
-model names so that declarations with the same local name remain distinct. For
-example, `Common.Geometry.Point` and `Common.Metadata.Point` become
-`ConsumerCommonGeometryPoint` and `ConsumerCommonMetadataPoint` in generators
-that use PascalCase model names.
+Structure namespaces are preserved in metadata. Java maps each schema
+resource to a subpackage of the configured model package and retains a
+globally unique flattened class name within it; other generators flatten the
+resource and declaration namespaces into generated model names. For example,
+Java places `ConsumerCommonGeometryPoint` and
+`ConsumerCommonMetadataPoint` in `org.openapitools.client.model.Consumer`.
+
+Each resource scope uses its explicit `name`, or a stable name materialized
+from the OAS component key when absent. Duplicate resource names are rejected
+because they would collide in the aggregate namespace. Definition-only
+resources remain available for import resolution, but client models are emitted
+from rooted resources; `$import` and `$importdefs` copies are emitted under the
+importing resource's namespace rather than duplicated under an unreferenced
+source namespace.
 
 Exact wire support is intentionally strict. Generation fails when the selected
 generator cannot guarantee the JSON Structure representation for:

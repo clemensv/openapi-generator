@@ -71,14 +71,14 @@ public class JSON {
         {{#models}}
         {{#model}}
         {{#discriminator}}
-                .registerTypeSelector({{modelPackage}}.{{classname}}.class, new TypeSelector<{{modelPackage}}.{{classname}}>() {
+                .registerTypeSelector({{#vendorExtensions.x-json-structure-java-fqcn}}{{{vendorExtensions.x-json-structure-java-fqcn}}}{{/vendorExtensions.x-json-structure-java-fqcn}}{{^vendorExtensions.x-json-structure-java-fqcn}}{{modelPackage}}.{{classname}}{{/vendorExtensions.x-json-structure-java-fqcn}}.class, new TypeSelector<{{#vendorExtensions.x-json-structure-java-fqcn}}{{{vendorExtensions.x-json-structure-java-fqcn}}}{{/vendorExtensions.x-json-structure-java-fqcn}}{{^vendorExtensions.x-json-structure-java-fqcn}}{{modelPackage}}.{{classname}}{{/vendorExtensions.x-json-structure-java-fqcn}}>() {
                     @Override
-                    public Class<? extends {{modelPackage}}.{{classname}}> getClassForElement(JsonElement readElement) {
+                    public Class<? extends {{#vendorExtensions.x-json-structure-java-fqcn}}{{{vendorExtensions.x-json-structure-java-fqcn}}}{{/vendorExtensions.x-json-structure-java-fqcn}}{{^vendorExtensions.x-json-structure-java-fqcn}}{{modelPackage}}.{{classname}}{{/vendorExtensions.x-json-structure-java-fqcn}}> getClassForElement(JsonElement readElement) {
                         Map<String, Class> classByDiscriminatorValue = new HashMap<String, Class>();
                         {{#mappedModels}}
-                        classByDiscriminatorValue.put("{{mappingName}}"{{^discriminatorCaseSensitive}}.toUpperCase(Locale.ROOT){{/discriminatorCaseSensitive}}, {{modelPackage}}.{{modelName}}.class);
+                        classByDiscriminatorValue.put("{{mappingName}}"{{^discriminatorCaseSensitive}}.toUpperCase(Locale.ROOT){{/discriminatorCaseSensitive}}, {{#modelFqcn}}{{{modelFqcn}}}{{/modelFqcn}}{{^modelFqcn}}{{modelPackage}}.{{modelName}}{{/modelFqcn}}.class);
                         {{/mappedModels}}
-                        classByDiscriminatorValue.put("{{name}}"{{^discriminatorCaseSensitive}}.toUpperCase(Locale.ROOT){{/discriminatorCaseSensitive}}, {{modelPackage}}.{{classname}}.class);
+                        classByDiscriminatorValue.put("{{name}}"{{^discriminatorCaseSensitive}}.toUpperCase(Locale.ROOT){{/discriminatorCaseSensitive}}, {{#vendorExtensions.x-json-structure-java-fqcn}}{{{vendorExtensions.x-json-structure-java-fqcn}}}{{/vendorExtensions.x-json-structure-java-fqcn}}{{^vendorExtensions.x-json-structure-java-fqcn}}{{modelPackage}}.{{classname}}{{/vendorExtensions.x-json-structure-java-fqcn}}.class);
                         return getClassByDiscriminator(classByDiscriminatorValue,
                                 getDiscriminatorValue(readElement, "{{{propertyBaseName}}}"));
                     }
@@ -135,7 +135,7 @@ public class JSON {
         {{#model}}
         {{^isEnum}}
         {{^hasChildren}}
-        gsonBuilder.registerTypeAdapterFactory(new {{modelPackage}}.{{{classname}}}.CustomTypeAdapterFactory());
+        gsonBuilder.registerTypeAdapterFactory(new {{#vendorExtensions.x-json-structure-java-fqcn}}{{{vendorExtensions.x-json-structure-java-fqcn}}}{{/vendorExtensions.x-json-structure-java-fqcn}}{{^vendorExtensions.x-json-structure-java-fqcn}}{{modelPackage}}.{{{classname}}}{{/vendorExtensions.x-json-structure-java-fqcn}}.CustomTypeAdapterFactory());
         {{/hasChildren}}
         {{/isEnum}}
         {{/model}}

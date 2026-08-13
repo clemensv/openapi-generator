@@ -44,6 +44,7 @@ import org.openapitools.codegen.schema.jsonstructure.JsonStructureModelCatalog;
 import org.openapitools.codegen.schema.jsonstructure.JsonStructureSchemaMapper;
 import org.openapitools.codegen.schema.jsonstructure.JsonStructureTypeDeclaration;
 import org.openapitools.codegen.schema.jsonstructure.JsonStructureTypeGraph;
+import org.openapitools.codegen.schema.jsonstructure.JsonStructureTypeKind;
 import org.openapitools.codegen.templating.CommonTemplateContentLocator;
 import org.openapitools.codegen.templating.GeneratorTemplateContentLocator;
 import org.openapitools.codegen.templating.MustacheEngineAdapter;
@@ -122,6 +123,7 @@ public class DefaultGenerator implements Generator {
         this.opts = opts;
         this.openAPI = opts.getOpenAPI();
         this.config = opts.getConfig();
+        this.config.setRawOpenAPI(opts.getRawOpenAPI());
 
         this.jsonStructureTypeGraph = opts.getJsonStructureTypeGraph();
         this.jsonStructureModelCatalog = null;
@@ -604,7 +606,15 @@ public class DefaultGenerator implements Generator {
                     ModelMap modelTemplate = modelList.get(0);
                     if (modelTemplate != null && modelTemplate.getModel() != null) {
                         CodegenModel m = modelTemplate.getModel();
-                        if (m.isAlias) {
+                        JsonStructureTypeDeclaration declaration = jsonStructureModelCatalog == null
+                                ? null
+                                : jsonStructureModelCatalog.declaration(modelName);
+                        boolean generatedJsonStructureShape = declaration != null
+                                && jsonStructureModelCatalog.isGeneratedModel(modelName)
+                                && (declaration.getKind() == JsonStructureTypeKind.OBJECT
+                                || declaration.getKind() == JsonStructureTypeKind.TUPLE
+                                || declaration.getKind() == JsonStructureTypeKind.CHOICE);
+                        if (m.isAlias && !generatedJsonStructureShape) {
                             // alias to number, string, enum, etc, which should not be generated as model
                             // but aliases are still used to dereference models in some languages (such as in html2).
                             aliasModels.add(modelTemplate);  // Store aliases in the separate list.
@@ -1871,12 +1881,12 @@ public class DefaultGenerator implements Generator {
             JsonStructureTypeGraph graph,
             JsonStructureModelCatalog catalog) {
         ModelsMap models = new ModelsMap();
-        models.put("package", config.modelPackage());
         CodegenModel codegenModel = config.fromJsonStructureType(name, declaration, graph, catalog);
+        models.put("package", config.jsonStructureModelPackage(declaration, graph));
         codegenModel.removeSelfReferenceImport();
         ModelMap model = new ModelMap();
         model.setModel(codegenModel);
-        model.put("importPath", config.toModelImport(codegenModel.classname));
+        model.put("importPath", config.toModelImport(name));
         models.setModels(List.of(model));
         Set<String> importSet = new ConcurrentSkipListSet<>();
         for (String nextImport : codegenModel.imports) {
