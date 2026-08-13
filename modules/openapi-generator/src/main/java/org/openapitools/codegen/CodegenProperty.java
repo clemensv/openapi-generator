@@ -37,6 +37,32 @@ public class CodegenProperty implements Cloneable, IJsonSchemaValidationProperti
     public String schemaNamespace;
     @Getter @Setter
     public String schemaQualifiedName;
+    @Getter @Setter
+    public List<Object> schemaExamples = new ArrayList<>();
+    @Getter @Setter
+    public Integer jsonStructurePrecision;
+    @Getter @Setter
+    public Integer jsonStructureScale;
+    @Getter @Setter
+    public List<Object> jsonStructureEnumValues = new ArrayList<>();
+    @Getter @Setter
+    public boolean jsonStructureHasConst;
+    @Getter @Setter
+    public Object jsonStructureConstValue;
+    @Getter @Setter
+    public List<String> unionTypeOrder = new ArrayList<>();
+    @Getter @Setter
+    public String unionMatchingSemantics;
+    @Getter @Setter
+    public Map<String, String> unionAlternativeDescriptions = new LinkedHashMap<>();
+    @Getter @Setter
+    public String referenceDescription;
+    @Getter @Setter
+    public String jsonStructureContentEncoding;
+    @Getter @Setter
+    public String jsonStructureContentCompression;
+    @Getter @Setter
+    public String jsonStructureContentMediaType;
     /**
      * The value of the 'type' attribute in the OpenAPI schema.
      * The per-language codegen logic may change to a language-specific type.

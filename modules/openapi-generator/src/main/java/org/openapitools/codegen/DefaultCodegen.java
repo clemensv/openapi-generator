@@ -64,14 +64,17 @@ import org.openapitools.codegen.model.ModelMap;
 import org.openapitools.codegen.model.ModelsMap;
 import org.openapitools.codegen.model.OperationsMap;
 import org.openapitools.codegen.model.WebhooksMap;
-import org.openapitools.codegen.serializer.SerializerUtils;
 import org.openapitools.codegen.schema.jsonstructure.JsonStructureModelCatalog;
+import org.openapitools.codegen.schema.jsonstructure.JsonStructureResource;
 import org.openapitools.codegen.schema.jsonstructure.JsonStructureSchemaMapper;
+import org.openapitools.codegen.schema.jsonstructure.JsonStructureTypeAlternative;
 import org.openapitools.codegen.schema.jsonstructure.JsonStructureTypeDeclaration;
 import org.openapitools.codegen.schema.jsonstructure.JsonStructureTypeGraph;
 import org.openapitools.codegen.schema.jsonstructure.JsonStructureTypeKind;
 import org.openapitools.codegen.schema.jsonstructure.JsonStructureTypeUse;
+import org.openapitools.codegen.schema.jsonstructure.JsonWireKind;
 import org.openapitools.codegen.schema.jsonstructure.QualifiedTypeName;
+import org.openapitools.codegen.serializer.SerializerUtils;
 import org.openapitools.codegen.templating.MustacheEngineAdapter;
 import org.openapitools.codegen.templating.mustache.*;
 import org.openapitools.codegen.utils.DiscriminatorUtils;
@@ -2846,25 +2849,61 @@ public class DefaultCodegen implements CodegenConfig {
         Schema schema = openAPI.getComponents().getSchemas().get(name);
         CodegenModel model = fromModel(name, schema);
         model.setSchemaDialect("json-structure");
-        model.setLogicalType(declaration.getKind().name().toLowerCase(Locale.ROOT));
-        model.setWireType(declaration.getWireKind().name().toLowerCase(Locale.ROOT));
+        model.setJsonStructureSdkValidated(graph.isSdkValidated());
+        model.setLogicalType(declaration.getLogicalTypeName());
+        model.setWireType(
+                graph.effectiveWireKind(declaration.getName()).name().toLowerCase(Locale.ROOT));
         model.setSchemaSourceId(declaration.getOrigin().getResourceId().toString());
         model.setSchemaResourceId(declaration.getName().getResourceId().toString());
         model.setSchemaNamespace(String.join(".", declaration.getName().getNamespace()));
         model.setSchemaQualifiedName(declaration.getName().toString());
         model.setAbstractSchema(declaration.isAbstractType());
-        model.setRequiredPropertyAlternatives(declaration.getRequiredAlternatives());
-        model.setTupleOrder(declaration.getTupleOrder());
+        model.setJsonStructureBaseTypes(declaration.getBases().stream()
+                .map(QualifiedTypeName::toString)
+                .collect(Collectors.toList()));
+        model.setSchemaExamples(declaration.getExamples());
+        model.setJsonStructurePrecision(declaration.getPrecision());
+        model.setJsonStructureScale(declaration.getScale());
+        model.setJsonStructureMaxLength(declaration.getMaxLength());
+        model.setRequiredPropertyAlternatives(
+                graph.effectiveRequiredAlternatives(declaration.getName()));
+        if (declaration.getKind() == JsonStructureTypeKind.TUPLE) {
+            model.setTupleOrder(graph.effectiveTupleOrder(declaration.getName()));
+            graph.effectiveProperties(declaration.getName()).forEach((propertyName, type) ->
+                    model.getTupleTypes().put(propertyName, type.getOrderedTypeIdentities()));
+        }
         model.setChoiceSelector(declaration.getSelector());
+        if (declaration.getDeclaredType() != null) {
+            setJsonStructureModelTypeMetadata(model, declaration.getDeclaredType());
+        }
+        if (declaration.getKind() == JsonStructureTypeKind.OBJECT) {
+            model.setJsonStructureAdditionalPropertiesAllowed(
+                    graph.effectiveAdditionalPropertiesAllowed(declaration.getName()));
+        }
+        JsonStructureResource resource = graph.resource(declaration.getName());
+        if (resource != null) {
+            model.setJsonStructureMetaSchemaUri(resource.getMetaSchemaUri());
+        }
+        if (resource != null && declaration.getName().equals(resource.getRoot())) {
+            resource.getOffers().forEach((offerName, types) ->
+                    model.getOfferedAddIns().put(
+                            offerName,
+                            types.stream()
+                                    .map(QualifiedTypeName::toString)
+                                    .collect(Collectors.toList())));
+            model.setUsedAddIns(resource.getDeclaredUses());
+            model.setEffectiveAddIns(resource.getEffectiveUses());
+            model.setJsonStructureDocumentName(resource.getDocumentName());
+            model.setJsonStructureResourceDescription(resource.getDescription());
+            model.setJsonStructureResourceExamples(resource.getExamples());
+        }
         declaration.getChoices().forEach((choiceName, choiceType) -> {
             if (choiceType.isReference()) {
                 model.getChoiceTypes().put(choiceName, catalog.modelName(choiceType.getReference()));
             } else {
                 model.getChoiceTypes().put(
                         choiceName,
-                        choiceType.getPrimitiveAlternatives().stream()
-                                .map(value -> value.name().toLowerCase(Locale.ROOT))
-                                .collect(Collectors.joining("|")));
+                        String.join("|", choiceType.getOrderedTypeIdentities()));
             }
         });
         String modelType = jsonStructureTargetType(declaration.getKind());
@@ -2885,51 +2924,150 @@ public class DefaultCodegen implements CodegenConfig {
                 declaration.getName().getNamespace());
         for (CodegenProperty property : model.getVars()) {
             JsonStructureTypeUse type = jsonStructurePropertyType(
-                    declaration,
-                    property.getBaseName(),
-                    graph,
-                    new LinkedHashSet<>());
-            if (type != null) {
-                property.setSchemaDialect("json-structure");
-                if (type.isReference()) {
-                    JsonStructureTypeDeclaration target = graph.getDeclarations().get(type.getReference());
-                    property.setLogicalType(target.getKind().name().toLowerCase(Locale.ROOT));
-                    property.setWireType(target.getWireKind().name().toLowerCase(Locale.ROOT));
-                    setJsonStructureReferenceMetadata(property, type.getReference(), target);
+                    declaration, property.getBaseName(), graph, new LinkedHashSet<>());
+            if (type == null) {
+                continue;
+            }
+            property.setSchemaDialect("json-structure");
+            setJsonStructurePropertyTypeMetadata(property, type);
+
+            List<String> logicalTypes = new ArrayList<>();
+            List<String> referenceIdentities = new ArrayList<>();
+            for (JsonStructureTypeAlternative alternative : type.getAlternatives()) {
+                if (alternative.isPrimitive()) {
+                    logicalTypes.add(alternative.getPrimitiveName());
                 } else {
-                    List<String> logicalTypes = type.getPrimitiveAlternatives().stream()
-                            .map(value -> value.name().toLowerCase(Locale.ROOT))
-                            .collect(Collectors.toList());
-                    type.getReferenceAlternatives().forEach(reference -> {
-                        JsonStructureTypeDeclaration target = graph.getDeclarations().get(reference);
-                        logicalTypes.add(target.getKind().name().toLowerCase(Locale.ROOT));
-                    });
-                    if (!type.getReferenceAlternatives().isEmpty()) {
-                        property.getVendorExtensions().put(
-                                JsonStructureSchemaMapper.X_REFERENCE_IDENTITIES,
-                                type.getReferenceAlternatives().stream()
-                                        .map(QualifiedTypeName::toString)
-                                        .collect(Collectors.toList()));
-                    }
-                    property.setLogicalType(String.join("|", logicalTypes));
-                    property.setWireType(String.valueOf(
-                            property.getVendorExtensions().get(JsonStructureSchemaMapper.X_WIRE_TYPE)));
-                    JsonStructureTypeKind primaryType = type.getPrimitiveAlternatives().stream()
-                            .filter(value -> value != JsonStructureTypeKind.NULL)
-                            .findFirst()
-                            .orElse(JsonStructureTypeKind.NULL);
-                    String targetType = jsonStructureTargetType(primaryType);
-                    if (targetType != null) {
-                        property.dataType = targetType;
-                        property.datatypeWithEnum = targetType;
-                        if (needToImport(targetType)) {
-                            model.imports.add(targetType);
-                        }
+                    JsonStructureTypeDeclaration target =
+                            graph.getDeclarations().get(alternative.getReference());
+                    logicalTypes.add(target.getLogicalTypeName());
+                    referenceIdentities.add(alternative.getReference().toString());
+                }
+            }
+            property.setLogicalType(String.join("|", logicalTypes));
+            if (type.isReference()) {
+                JsonStructureTypeDeclaration target = graph.getDeclarations().get(type.getReference());
+                property.setWireType(
+                        graph.effectiveWireKind(type.getReference()).name().toLowerCase(Locale.ROOT));
+                setJsonStructureReferenceMetadata(property, type.getReference(), target);
+            } else if (type.getAlternatives().size() == 1) {
+                property.setWireType(type.getAlternatives().get(0).getPrimitiveKind()
+                        .wireKind().name().toLowerCase(Locale.ROOT));
+            } else {
+                property.setWireType(JsonWireKind.ANY.name().toLowerCase(Locale.ROOT));
+            }
+            if (!referenceIdentities.isEmpty()) {
+                property.getVendorExtensions().put(
+                        JsonStructureSchemaMapper.X_REFERENCE_IDENTITIES, referenceIdentities);
+            }
+
+            JsonStructureTypeKind primaryType = type.getAlternatives().stream()
+                    .filter(JsonStructureTypeAlternative::isPrimitive)
+                    .map(JsonStructureTypeAlternative::getPrimitiveKind)
+                    .filter(value -> value != JsonStructureTypeKind.NULL)
+                    .findFirst()
+                    .orElse(null);
+            if (primaryType != null) {
+                String targetType = jsonStructureTargetType(primaryType);
+                if (targetType != null) {
+                    property.dataType = targetType;
+                    property.datatypeWithEnum = targetType;
+                    if (needToImport(targetType)) {
+                        model.imports.add(targetType);
                     }
                 }
             }
         }
         return model;
+    }
+
+    private void setJsonStructureModelTypeMetadata(
+            CodegenModel model, JsonStructureTypeUse type) {
+        model.setSchemaExamples(type.getExamples());
+        model.setJsonStructurePrecision(type.getPrecision());
+        model.setJsonStructureScale(type.getScale());
+        model.setJsonStructureMaxLength(type.getMaxLength());
+        model.setJsonStructureEnumValues(type.getEnumValues());
+        model.setJsonStructureHasConst(type.hasConst());
+        model.setJsonStructureConstValue(type.getConstValue());
+        if (!type.getEnumValues().isEmpty()) {
+            model.getVendorExtensions().put(
+                    JsonStructureSchemaMapper.X_ENUM_VALUES, type.getEnumValues());
+        }
+        if (type.hasConst()) {
+            model.getVendorExtensions().put(JsonStructureSchemaMapper.X_HAS_CONST, true);
+            model.getVendorExtensions().put(
+                    JsonStructureSchemaMapper.X_CONST_VALUE, type.getConstValue());
+        }
+        if (type.isUnion()) {
+            model.setUnionTypeOrder(type.getOrderedTypeIdentities());
+            model.setUnionMatchingSemantics("first-match");
+            type.getAlternatives().stream()
+                    .filter(alternative -> alternative.getReferenceDescription() != null)
+                    .forEach(alternative -> model.getUnionAlternativeDescriptions().put(
+                            alternative.identity(), alternative.getReferenceDescription()));
+            model.getVendorExtensions().put(
+                    JsonStructureSchemaMapper.X_UNION_ORDER, type.getOrderedTypeIdentities());
+            model.getVendorExtensions().put(
+                    JsonStructureSchemaMapper.X_UNION_MATCHING, "first-match");
+        }
+        if (type.getReferenceDescription() != null) {
+            model.setReferenceDescription(type.getReferenceDescription());
+            model.getVendorExtensions().put(
+                    JsonStructureSchemaMapper.X_REFERENCE_DESCRIPTION,
+                    type.getReferenceDescription());
+        }
+    }
+
+    private void setJsonStructurePropertyTypeMetadata(
+            CodegenProperty property, JsonStructureTypeUse type) {
+        property.setSchemaExamples(type.getExamples());
+        property.setJsonStructurePrecision(type.getPrecision());
+        property.setJsonStructureScale(type.getScale());
+        property.setJsonStructureEnumValues(type.getEnumValues());
+        property.setJsonStructureHasConst(type.hasConst());
+        property.setJsonStructureConstValue(type.getConstValue());
+        if (!type.getEnumValues().isEmpty()) {
+            property.getVendorExtensions().put(
+                    JsonStructureSchemaMapper.X_ENUM_VALUES, type.getEnumValues());
+        }
+        if (type.hasConst()) {
+            property.getVendorExtensions().put(JsonStructureSchemaMapper.X_HAS_CONST, true);
+            property.getVendorExtensions().put(
+                    JsonStructureSchemaMapper.X_CONST_VALUE, type.getConstValue());
+        }
+        property.maxLength = type.getMaxLength();
+        property.setJsonStructureContentEncoding(type.getContentEncoding());
+        property.setJsonStructureContentCompression(type.getContentCompression());
+        property.setJsonStructureContentMediaType(type.getContentMediaType());
+        if (type.getDescription() != null) {
+            property.setDescription(type.getDescription());
+        }
+        if (type.isUnion()) {
+            property.setUnionTypeOrder(type.getOrderedTypeIdentities());
+            property.setUnionMatchingSemantics("first-match");
+            type.getAlternatives().stream()
+                    .filter(alternative -> alternative.getReferenceDescription() != null)
+                    .forEach(alternative -> property.getUnionAlternativeDescriptions().put(
+                            alternative.identity(), alternative.getReferenceDescription()));
+            property.getVendorExtensions().put(
+                    JsonStructureSchemaMapper.X_UNION_ORDER, type.getOrderedTypeIdentities());
+            property.getVendorExtensions().put(
+                    JsonStructureSchemaMapper.X_UNION_MATCHING, "first-match");
+        }
+        if (type.getReferenceDescription() != null) {
+            property.setReferenceDescription(type.getReferenceDescription());
+            property.getVendorExtensions().put(
+                    JsonStructureSchemaMapper.X_REFERENCE_DESCRIPTION,
+                    type.getReferenceDescription());
+        }
+        if (type.getPrecision() != null) {
+            property.getVendorExtensions().put(
+                    JsonStructureSchemaMapper.X_PRECISION, type.getPrecision());
+        }
+        if (type.getScale() != null) {
+            property.getVendorExtensions().put(
+                    JsonStructureSchemaMapper.X_SCALE, type.getScale());
+        }
     }
 
     private void setJsonStructureReferenceMetadata(

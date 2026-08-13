@@ -192,7 +192,7 @@ public class JsonStructureResolverTest {
     }
 
     @Test
-    public void preservesAndValidatesBinaryAnnotations() throws Exception {
+    public void preservesSdkValidatedBinaryAnnotations() throws Exception {
         String source = "openapi: 3.1.0\n"
                 + "components:\n"
                 + "  schemas:\n"
@@ -222,14 +222,6 @@ public class JsonStructureResolverTest {
                 document.getProperties().get("compressedData").getContentMediaType(),
                 "application/octet-stream");
 
-        String invalid = source.replace("base32hex", "quoted-printable");
-        assertThrows(
-                JsonStructureResolutionException.class,
-                () -> new JsonStructureResolver().resolve(Yaml.mapper().readTree(invalid)));
-        String nonBinary = source.replace("type: binary\n          contentEncoding", "type: string\n          contentEncoding");
-        assertThrows(
-                JsonStructureResolutionException.class,
-                () -> new JsonStructureResolver().resolve(Yaml.mapper().readTree(nonBinary)));
     }
 
     @Test
@@ -248,10 +240,31 @@ public class JsonStructureResolverTest {
 
         JsonStructureTypeGraph graph = new JsonStructureResolver().resolve(Yaml.mapper().readTree(source));
 
-        assertEquals(graph.getComponentByResourceId().get(URI.create("https://api.example.com/types")), "Plain");
+        assertEquals(graph.getComponentByResourceId().get("https://api.example.com/types"), "Plain");
         assertEquals(
-                graph.getComponentByResourceId().get(URI.create("https://api.example.com/types#version-2")),
+                graph.getComponentByResourceId().get("https://api.example.com/types#version-2"),
                 "Fragmented");
+    }
+
+    @Test
+    public void keepsByteDistinctResourceIdsDistinct() throws Exception {
+        String source = "openapi: 3.1.0\n"
+                + "components:\n"
+                + "  schemas:\n"
+                + "    Upper:\n"
+                + "      $schema: https://json-structure.org/meta/core/v0/#\n"
+                + "      $id: https://EXAMPLE.com/types\n"
+                + "      definitions: {}\n"
+                + "    Lower:\n"
+                + "      $schema: https://json-structure.org/meta/core/v0/#\n"
+                + "      $id: https://example.com/types\n"
+                + "      definitions: {}\n";
+
+        JsonStructureTypeGraph graph =
+                new JsonStructureResolver().resolve(Yaml.mapper().readTree(source));
+
+        assertEquals(graph.getComponentByResourceId().get("https://EXAMPLE.com/types"), "Upper");
+        assertEquals(graph.getComponentByResourceId().get("https://example.com/types"), "Lower");
     }
 
     @Test

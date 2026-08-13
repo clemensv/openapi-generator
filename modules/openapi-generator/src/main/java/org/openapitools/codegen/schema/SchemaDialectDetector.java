@@ -21,6 +21,7 @@ import com.fasterxml.jackson.databind.JsonNode;
 import java.util.Collections;
 import java.util.LinkedHashMap;
 import java.util.Map;
+import java.util.function.Predicate;
 
 public final class SchemaDialectDetector {
     public static final String JSON_STRUCTURE_CORE = "https://json-structure.org/meta/core/v0/#";
@@ -33,11 +34,16 @@ public final class SchemaDialectDetector {
     }
 
     public static Map<String, SchemaDialect> componentSchemaDialects(JsonNode document) {
+        return componentSchemaDialects(document, Map.of());
+    }
+
+    public static Map<String, SchemaDialect> componentSchemaDialects(
+            JsonNode document, Map<String, SchemaDialect> verifiedCustomMetaSchemas) {
         if (document == null) {
             return Collections.emptyMap();
         }
 
-        String documentDialect = textValue(document.get("jsonSchemaDialect"));
+        JsonNode documentDialect = document.get("jsonSchemaDialect");
         JsonNode schemas = document.path("components").path("schemas");
         if (!schemas.isObject()) {
             return Collections.emptyMap();
@@ -46,18 +52,35 @@ public final class SchemaDialectDetector {
         Map<String, SchemaDialect> result = new LinkedHashMap<>();
         schemas.fields().forEachRemaining(entry -> {
             JsonNode schema = entry.getValue();
+            if (schema.isObject() && schema.has("$schema")) {
+                result.put(
+                        entry.getKey(),
+                        fromNode(schema.get("$schema"), verifiedCustomMetaSchemas));
+                return;
+            }
             if (schema.isObject() && schema.has("$ref")) {
                 result.put(entry.getKey(), SchemaDialect.OAS);
-            } else {
-                String schemaDialect = schema.isObject() ? textValue(schema.get("$schema")) : null;
-                result.put(entry.getKey(), fromUri(schemaDialect != null ? schemaDialect : documentDialect));
+                return;
             }
+            result.put(entry.getKey(), fromNode(documentDialect, verifiedCustomMetaSchemas));
         });
         return Collections.unmodifiableMap(result);
     }
 
+    public static String effectiveDialectUri(JsonNode document, JsonNode schema) {
+        JsonNode selected = schema != null && schema.isObject() && schema.has("$schema")
+                ? schema.get("$schema")
+                : document == null ? null : document.get("jsonSchemaDialect");
+        return textValue(selected);
+    }
+
     public static SchemaDialect fromUri(String dialectUri) {
-        if (dialectUri == null || dialectUri.isBlank()) {
+        return fromUri(dialectUri, Map.of());
+    }
+
+    public static SchemaDialect fromUri(
+            String dialectUri, Map<String, SchemaDialect> verifiedCustomMetaSchemas) {
+        if (dialectUri == null) {
             return SchemaDialect.OAS;
         }
         switch (dialectUri) {
@@ -71,36 +94,68 @@ public final class SchemaDialectDetector {
             case JSON_SCHEMA_2020_12:
                 return SchemaDialect.OAS;
             default:
-                return SchemaDialect.UNKNOWN;
+                return verifiedCustomMetaSchemas.getOrDefault(
+                        dialectUri, SchemaDialect.UNKNOWN);
         }
     }
 
     public static boolean containsJsonStructureSchemas(JsonNode document) {
-        return componentSchemaDialects(document).values().stream().anyMatch(SchemaDialect::isJsonStructure);
+        return containsJsonStructureSchemas(document, Map.of());
+    }
+
+    public static boolean containsJsonStructureSchemas(
+            JsonNode document, Map<String, SchemaDialect> verifiedCustomMetaSchemas) {
+        return componentSchemaDialects(document, verifiedCustomMetaSchemas)
+                .values().stream().anyMatch(SchemaDialect::isJsonStructure);
+    }
+
+    public static boolean containsUnknownSchemaDialects(
+            JsonNode document, Map<String, SchemaDialect> verifiedCustomMetaSchemas) {
+        return componentSchemaDialects(document, verifiedCustomMetaSchemas)
+                .containsValue(SchemaDialect.UNKNOWN);
     }
 
     public static boolean containsInlineJsonStructureSchemas(JsonNode document) {
-        if (document == null) {
-            return false;
-        }
-        return containsInlineJsonStructureSchemas(
-                document,
-                textValue(document.get("jsonSchemaDialect")),
-                false,
-                false);
+        return containsInlineJsonStructureSchemas(document, Map.of());
     }
 
-    private static boolean containsInlineJsonStructureSchemas(
+    public static boolean containsInlineJsonStructureSchemas(
+            JsonNode document, Map<String, SchemaDialect> verifiedCustomMetaSchemas) {
+        return containsInlineDialect(
+                document,
+                document == null ? null : document.get("jsonSchemaDialect"),
+                false,
+                false,
+                verifiedCustomMetaSchemas,
+                SchemaDialect::isJsonStructure);
+    }
+
+    public static boolean containsInlineUnknownSchemaDialects(
+            JsonNode document, Map<String, SchemaDialect> verifiedCustomMetaSchemas) {
+        return containsInlineDialect(
+                document,
+                document == null ? null : document.get("jsonSchemaDialect"),
+                false,
+                false,
+                verifiedCustomMetaSchemas,
+                dialect -> dialect == SchemaDialect.UNKNOWN);
+    }
+
+    private static boolean containsInlineDialect(
             JsonNode node,
-            String documentDialect,
+            JsonNode documentDialect,
             boolean schemaValue,
-            boolean componentsObject) {
+            boolean componentsObject,
+            Map<String, SchemaDialect> verifiedCustomMetaSchemas,
+            Predicate<SchemaDialect> predicate) {
         if (node == null) {
             return false;
         }
-        if (schemaValue && node.isObject() && !node.has("$ref")) {
-            String dialect = textValue(node.get("$schema"));
-            if (fromUri(dialect != null ? dialect : documentDialect).isJsonStructure()) {
+        if (schemaValue && node.isObject() && (node.has("$schema") || !node.has("$ref"))) {
+            JsonNode selected = node.has("$schema")
+                    ? node.get("$schema")
+                    : documentDialect;
+            if (predicate.test(fromNode(selected, verifiedCustomMetaSchemas))) {
                 return true;
             }
         }
@@ -109,22 +164,37 @@ public final class SchemaDialectDetector {
                 if (componentsObject && "schemas".equals(entry.getKey())) {
                     continue;
                 }
-                if (containsInlineJsonStructureSchemas(
+                if (containsInlineDialect(
                         entry.getValue(),
                         documentDialect,
                         "schema".equals(entry.getKey()),
-                        "components".equals(entry.getKey()))) {
+                        "components".equals(entry.getKey()),
+                        verifiedCustomMetaSchemas,
+                        predicate)) {
                     return true;
                 }
             }
         } else if (node.isArray()) {
             for (JsonNode child : node) {
-                if (containsInlineJsonStructureSchemas(child, documentDialect, false, false)) {
+                if (containsInlineDialect(
+                        child, documentDialect, false, false,
+                        verifiedCustomMetaSchemas, predicate)) {
                     return true;
                 }
             }
         }
         return false;
+    }
+
+    private static SchemaDialect fromNode(
+            JsonNode dialect, Map<String, SchemaDialect> verifiedCustomMetaSchemas) {
+        if (dialect == null) {
+            return SchemaDialect.OAS;
+        }
+        if (!dialect.isTextual()) {
+            return SchemaDialect.UNKNOWN;
+        }
+        return fromUri(dialect.textValue(), verifiedCustomMetaSchemas);
     }
 
     private static <T> Iterable<T> iterable(java.util.Iterator<T> iterator) {

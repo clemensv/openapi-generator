@@ -7,6 +7,7 @@
 
 package org.openapitools.codegen.schema.jsonstructure;
 
+import java.util.ArrayList;
 import java.util.Collections;
 import java.util.LinkedHashMap;
 import java.util.List;
@@ -20,6 +21,9 @@ public final class JsonStructureTypeDeclaration {
     private final JsonWireKind wireKind;
     private final boolean abstractType;
     private final boolean synthetic;
+    private final boolean rootOwned;
+    private final String description;
+    private final List<Object> examples;
     private final Map<String, JsonStructureTypeUse> properties;
     private final List<List<String>> requiredAlternatives;
     private final List<QualifiedTypeName> bases;
@@ -42,6 +46,9 @@ public final class JsonStructureTypeDeclaration {
             JsonWireKind wireKind,
             boolean abstractType,
             boolean synthetic,
+            boolean rootOwned,
+            String description,
+            List<Object> examples,
             Map<String, JsonStructureTypeUse> properties,
             List<List<String>> requiredAlternatives,
             List<QualifiedTypeName> bases,
@@ -62,8 +69,13 @@ public final class JsonStructureTypeDeclaration {
         this.wireKind = Objects.requireNonNull(wireKind);
         this.abstractType = abstractType;
         this.synthetic = synthetic;
+        this.rootOwned = rootOwned;
+        this.description = description;
+        this.examples = Collections.unmodifiableList(new ArrayList<>(examples));
         this.properties = Collections.unmodifiableMap(new LinkedHashMap<>(properties));
-        this.requiredAlternatives = List.copyOf(requiredAlternatives);
+        this.requiredAlternatives = requiredAlternatives.stream()
+                .map(List::copyOf)
+                .collect(java.util.stream.Collectors.toUnmodifiableList());
         this.bases = List.copyOf(bases);
         this.choices = Collections.unmodifiableMap(new LinkedHashMap<>(choices));
         this.selector = selector;
@@ -100,6 +112,18 @@ public final class JsonStructureTypeDeclaration {
 
     public boolean isSynthetic() {
         return synthetic;
+    }
+
+    public boolean isRootOwned() {
+        return rootOwned;
+    }
+
+    public String getDescription() {
+        return description;
+    }
+
+    public List<Object> getExamples() {
+        return examples;
     }
 
     public Map<String, JsonStructureTypeUse> getProperties() {
@@ -156,5 +180,22 @@ public final class JsonStructureTypeDeclaration {
 
     public JsonStructureTypeUse getAdditionalPropertiesType() {
         return additionalPropertiesType;
+    }
+
+    public String getLogicalTypeName() {
+        if (kind == JsonStructureTypeKind.UNION) {
+            return "union";
+        }
+        if (kind == JsonStructureTypeKind.ALIAS) {
+            return "reference";
+        }
+        if (declaredType != null
+                && declaredType.getAlternatives().size() == 1
+                && declaredType.getAlternatives().get(0).isPrimitive()) {
+            return declaredType.getAlternatives().get(0).getPrimitiveName();
+        }
+        return kind == JsonStructureTypeKind.JSON_POINTER
+                ? "jsonpointer"
+                : kind.name().toLowerCase(java.util.Locale.ROOT);
     }
 }

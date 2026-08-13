@@ -6,6 +6,7 @@ ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 CLI_JAR="${CLI_JAR:-${ROOT_DIR}/modules/openapi-generator-cli/target/openapi-generator-cli.jar}"
 SPEC_DIR="${ROOT_DIR}/modules/openapi-generator/src/test/resources/3_1"
 NPM_REGISTRY="${NPM_CONFIG_REGISTRY:-https://packagefeedproxy.microsoft.io/npm/}"
+NUGET_SOURCE="${NUGET_SOURCE:-https://pkgs.dev.azure.com/dnceng/public/_packaging/dotnet-public/nuget/v3/index.json}"
 
 if [[ -z "${OUTPUT_DIR:-}" ]]; then
   OUTPUT_DIR="$(mktemp -d)"
@@ -21,6 +22,7 @@ FIXTURES=(
   json-structure-containers
   json-structure-mixed
   json-structure-namespaces
+  json-structure-wire-shapes
 )
 
 if [[ ! -f "${CLI_JAR}" ]]; then
@@ -31,7 +33,9 @@ fi
 
 cleanup() {
   if [[ "${REMOVE_OUTPUT}" == true && -z "${KEEP_OUTPUT:-}" ]]; then
-    rm -rf "${OUTPUT_DIR}"
+    docker run --rm --mount "type=bind,source=${OUTPUT_DIR},target=/work" \
+      composer:2 sh -lc 'find /work -mindepth 1 -depth -delete' >/dev/null
+    rmdir "${OUTPUT_DIR}"
   elif [[ -n "${KEEP_OUTPUT:-}" ]]; then
     echo "Generated projects retained in ${OUTPUT_DIR}"
   fi
@@ -41,12 +45,17 @@ trap cleanup EXIT
 for generator in "${GENERATORS[@]}"; do
   for fixture in "${FIXTURES[@]}"; do
     output="${OUTPUT_DIR}/${generator}/${fixture}"
+    extra_args=()
+    if [[ "${fixture}" == "json-structure-wire-shapes" ]]; then
+      extra_args=(-p jsonStructureCompatibilityMode=true)
+    fi
     java -jar "${CLI_JAR}" generate \
       -g "${generator}" \
       -i "${SPEC_DIR}/${fixture}.yaml" \
       -o "${output}" \
       --skip-validate-spec \
-      --global-property apiTests=false,modelTests=false >/dev/null
+      --global-property apiTests=false,modelTests=false \
+      "${extra_args[@]}" >/dev/null
   done
 done
 
@@ -55,8 +64,8 @@ docker run --rm --mount "type=bind,source=${OUTPUT_DIR}/java,target=/work" \
   'for d in /work/*; do echo "JAVA $(basename "$d")"; mvn -q -f "$d/pom.xml" -DskipTests package || exit 1; done'
 
 docker run --rm --mount "type=bind,source=${OUTPUT_DIR}/csharp,target=/work" \
-  mcr.microsoft.com/dotnet/sdk:10.0 sh -lc \
-  'for d in /work/*; do echo "CSHARP $(basename "$d")"; dotnet build "$d/Org.OpenAPITools.sln" --nologo -v:q || exit 1; done'
+  -e "NUGET_SOURCE=${NUGET_SOURCE}" mcr.microsoft.com/dotnet/sdk:10.0 sh -lc \
+  'for d in /work/*; do echo "CSHARP $(basename "$d")"; dotnet restore "$d/Org.OpenAPITools.sln" --source "$NUGET_SOURCE" --ignore-failed-sources -v:q && dotnet build "$d/Org.OpenAPITools.sln" --no-restore --nologo -v:q || exit 1; done'
 
 docker run --rm --mount "type=bind,source=${OUTPUT_DIR}/go,target=/work" \
   golang:1.25 sh -lc \

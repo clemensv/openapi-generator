@@ -40,6 +40,7 @@ public enum JsonStructureTypeKind {
     MAP,
     TUPLE,
     CHOICE,
+    ALIAS,
     UNION,
     ANY;
 
@@ -158,6 +159,7 @@ public enum JsonStructureTypeKind {
             case CHOICE:
                 return JsonWireKind.OBJECT;
             case ANY:
+            case ALIAS:
             case UNION:
                 return JsonWireKind.ANY;
             default:

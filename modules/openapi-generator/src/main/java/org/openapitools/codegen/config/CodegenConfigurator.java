@@ -37,6 +37,7 @@ import org.openapitools.codegen.api.TemplatingEngineAdapter;
 import org.openapitools.codegen.auth.AuthParser;
 import org.openapitools.codegen.utils.ModelUtils;
 import org.openapitools.codegen.schema.SchemaDialectDetector;
+import org.openapitools.codegen.schema.jsonstructure.JsonStructureResolutionOptions;
 import org.openapitools.codegen.schema.jsonstructure.JsonStructureResolver;
 import org.openapitools.codegen.schema.jsonstructure.JsonStructureTypeGraph;
 import org.slf4j.Logger;
@@ -90,11 +91,40 @@ public class CodegenConfigurator {
     private Map<String, String> reservedWordsMappings = new HashMap<>();
     private Map<String, String> serverVariables = new HashMap<>();
     private String auth;
+    private JsonStructureResolutionOptions jsonStructureResolutionOptions =
+            new JsonStructureResolutionOptions();
 
     private List<TemplateDefinition> userDefinedTemplates = new ArrayList<>();
 
     public CodegenConfigurator() {
 
+    }
+
+    public JsonStructureResolutionOptions getJsonStructureResolutionOptions() {
+        return jsonStructureResolutionOptions;
+    }
+
+    public CodegenConfigurator setJsonStructureResolutionOptions(
+            JsonStructureResolutionOptions options) {
+        this.jsonStructureResolutionOptions = Objects.requireNonNull(options);
+        return this;
+    }
+
+    public CodegenConfigurator addVerifiedJsonStructureMetaSchema(
+            String customMetaSchemaUri, String canonicalMetaSchemaUri) {
+        jsonStructureResolutionOptions.addVerifiedCustomMetaSchema(
+                customMetaSchemaUri, canonicalMetaSchemaUri);
+        return this;
+    }
+
+    public CodegenConfigurator setJsonStructureEncapsulatingEntityBaseUri(String value) {
+        jsonStructureResolutionOptions.setEncapsulatingEntityBaseUri(URI.create(value));
+        return this;
+    }
+
+    public CodegenConfigurator setJsonStructureApplicationDefaultBaseUri(String value) {
+        jsonStructureResolutionOptions.setApplicationDefaultBaseUri(URI.create(value));
+        return this;
     }
 
     public static CodegenConfigurator fromFile(String configFile, Module... modules) {
@@ -802,15 +832,29 @@ public class CodegenConfigurator {
 
         Context<OpenAPI> context = new Context<>(specification, generatorSettings, workflowSettings);
         context.setRawSpecDocument(rawSpecification);
-        if (SchemaDialectDetector.containsInlineJsonStructureSchemas(rawSpecification)) {
+        Map<String, org.openapitools.codegen.schema.SchemaDialect> customMetaSchemas =
+                jsonStructureResolutionOptions.getVerifiedCustomMetaSchemas();
+        if (SchemaDialectDetector.containsUnknownSchemaDialects(
+                rawSpecification, customMetaSchemas)
+                || SchemaDialectDetector.containsInlineUnknownSchemaDialects(
+                        rawSpecification, customMetaSchemas)) {
+            throw new IllegalArgumentException(
+                    "The OpenAPI Description contains an unknown schema dialect. "
+                            + "Refusing to process it as OAS/JSON Schema; configure a verified custom "
+                            + "JSON Structure meta-schema mapping if applicable.");
+        }
+        if (SchemaDialectDetector.containsInlineJsonStructureSchemas(
+                rawSpecification, customMetaSchemas)) {
             throw new IllegalArgumentException(
                     "Inline JSON Structure Schema Objects outside components.schemas are not supported. "
                             + "Move the schema to components.schemas and reference it with an OpenAPI $ref.");
         }
-        if (SchemaDialectDetector.containsJsonStructureSchemas(rawSpecification)) {
+        if (SchemaDialectDetector.containsJsonStructureSchemas(
+                rawSpecification, customMetaSchemas)) {
             context.setSchemaTypeGraph(new JsonStructureResolver().resolve(
                     rawSpecification,
-                    retrievalUri(inputSpec)));
+                    retrievalUri(inputSpec),
+                    jsonStructureResolutionOptions));
         }
         return context;
     }

@@ -64,6 +64,10 @@ public class CodegenModel implements IJsonSchemaValidationProperties {
     @Getter @Setter
     public String schemaDialect;
     @Getter @Setter
+    public String jsonStructureMetaSchemaUri;
+    @Getter @Setter
+    public boolean jsonStructureSdkValidated;
+    @Getter @Setter
     public String logicalType;
     @Getter @Setter
     public String wireType;
@@ -78,6 +82,8 @@ public class CodegenModel implements IJsonSchemaValidationProperties {
     @Getter @Setter
     public boolean abstractSchema;
     @Getter @Setter
+    public List<String> jsonStructureBaseTypes = new ArrayList<>();
+    @Getter @Setter
     public List<List<String>> requiredPropertyAlternatives = new ArrayList<>();
     @Getter @Setter
     public List<String> tupleOrder = new ArrayList<>();
@@ -85,6 +91,44 @@ public class CodegenModel implements IJsonSchemaValidationProperties {
     public String choiceSelector;
     @Getter @Setter
     public Map<String, String> choiceTypes = new LinkedHashMap<>();
+    @Getter @Setter
+    public List<Object> schemaExamples = new ArrayList<>();
+    @Getter @Setter
+    public String jsonStructureDocumentName;
+    @Getter @Setter
+    public String jsonStructureResourceDescription;
+    @Getter @Setter
+    public List<Object> jsonStructureResourceExamples = new ArrayList<>();
+    @Getter @Setter
+    public Integer jsonStructurePrecision;
+    @Getter @Setter
+    public Integer jsonStructureScale;
+    @Getter @Setter
+    public Integer jsonStructureMaxLength;
+    @Getter @Setter
+    public List<Object> jsonStructureEnumValues = new ArrayList<>();
+    @Getter @Setter
+    public boolean jsonStructureHasConst;
+    @Getter @Setter
+    public Object jsonStructureConstValue;
+    @Getter @Setter
+    public List<String> unionTypeOrder = new ArrayList<>();
+    @Getter @Setter
+    public String unionMatchingSemantics;
+    @Getter @Setter
+    public Map<String, String> unionAlternativeDescriptions = new LinkedHashMap<>();
+    @Getter @Setter
+    public String referenceDescription;
+    @Getter @Setter
+    public Boolean jsonStructureAdditionalPropertiesAllowed;
+    @Getter @Setter
+    public Map<String, List<String>> offeredAddIns = new LinkedHashMap<>();
+    @Getter @Setter
+    public List<String> usedAddIns = new ArrayList<>();
+    @Getter @Setter
+    public List<String> effectiveAddIns = new ArrayList<>();
+    @Getter @Setter
+    public Map<String, List<String>> tupleTypes = new LinkedHashMap<>();
 
     // The schema name as written in the OpenAPI document
     // If it's a reserved word, it will be escaped.

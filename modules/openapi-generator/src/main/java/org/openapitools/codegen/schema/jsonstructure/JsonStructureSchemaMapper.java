@@ -16,14 +16,17 @@ import io.swagger.v3.oas.models.media.Schema;
 
 import java.util.ArrayList;
 import java.util.LinkedHashMap;
+import java.util.LinkedHashSet;
 import java.util.List;
+import java.util.Locale;
 import java.util.Map;
 import java.util.Set;
-import java.util.LinkedHashSet;
 import java.util.stream.Collectors;
 
 public final class JsonStructureSchemaMapper {
     public static final String X_SCHEMA_DIALECT = "x-openapi-generator-schema-dialect";
+    public static final String X_SDK_VALIDATED = "x-json-structure-sdk-validated";
+    public static final String X_META_SCHEMA_URI = "x-json-structure-meta-schema-uri";
     public static final String X_LOGICAL_TYPE = "x-json-structure-logical-type";
     public static final String X_WIRE_TYPE = "x-json-structure-wire-type";
     public static final String X_ORIGIN = "x-json-structure-origin";
@@ -33,6 +36,24 @@ public final class JsonStructureSchemaMapper {
     public static final String X_REQUIRED_ALTERNATIVES = "x-json-structure-required-alternatives";
     public static final String X_TUPLE_ORDER = "x-json-structure-tuple-order";
     public static final String X_BASES = "x-json-structure-bases";
+    public static final String X_PRECISION = "x-json-structure-precision";
+    public static final String X_SCALE = "x-json-structure-scale";
+    public static final String X_ENUM_VALUES = "x-json-structure-enum-values";
+    public static final String X_CONST_VALUE = "x-json-structure-const-value";
+    public static final String X_HAS_CONST = "x-json-structure-has-const";
+    public static final String X_CONTENT_COMPRESSION = "x-json-structure-content-compression";
+    public static final String X_UNION_ORDER = "x-json-structure-union-order";
+    public static final String X_UNION_MATCHING = "x-json-structure-union-matching";
+    public static final String X_REFERENCE_DESCRIPTION = "x-json-structure-reference-description";
+    public static final String X_REFERENCE_ALTERNATIVES = "x-json-structure-reference-alternatives";
+    public static final String X_OFFERS = "x-json-structure-offers";
+    public static final String X_USES = "x-json-structure-uses";
+    public static final String X_EFFECTIVE_USES = "x-json-structure-effective-uses";
+    public static final String X_DOCUMENT_NAME = "x-json-structure-document-name";
+    public static final String X_RESOURCE_DESCRIPTION = "x-json-structure-resource-description";
+    public static final String X_RESOURCE_EXAMPLES = "x-json-structure-resource-examples";
+    public static final String X_ADDITIONAL_PROPERTIES = "x-json-structure-additional-properties";
+    public static final String X_CHOICE_ORDER = "x-json-structure-choice-order";
     private final boolean compatibilityMode;
 
     public JsonStructureSchemaMapper() {
@@ -70,23 +91,64 @@ public final class JsonStructureSchemaMapper {
             case CHOICE:
                 schema = choiceSchema(declaration, graph, catalog);
                 break;
+            case ALIAS:
             case UNION:
                 schema = typeUseSchema(declaration.getDeclaredType(), graph, catalog);
                 break;
             default:
-                schema = primitiveSchema(declaration.getKind());
-                applyValueConstraints(schema, declaration.getDeclaredType());
+                schema = typeUseSchema(declaration.getDeclaredType(), graph, catalog);
                 break;
         }
-        annotate(schema, declaration.getKind().name().toLowerCase(), declaration.getWireKind().name().toLowerCase());
+        annotate(
+                schema,
+                declaration.getLogicalTypeName(),
+                graph.effectiveWireKind(declaration.getName()).name().toLowerCase(Locale.ROOT));
+        applyDocumentation(schema, declaration.getDescription(), declaration.getExamples());
+        schema.addExtension(X_SDK_VALIDATED, graph.isSdkValidated());
         schema.addExtension(X_ORIGIN, declaration.getOrigin().toString());
         schema.addExtension(X_EFFECTIVE_ID, declaration.getName().toString());
         schema.addExtension(X_NAMESPACE, declaration.getName().getNamespace());
+        schema.addExtension("x-json-structure-abstract", declaration.isAbstractType());
+        if (!declaration.getBases().isEmpty()) {
+            schema.addExtension(X_BASES, declaration.getBases().stream()
+                    .map(QualifiedTypeName::toString)
+                    .collect(Collectors.toList()));
+        }
         if (declaration.getPrecision() != null) {
-            schema.addExtension("x-json-structure-precision", declaration.getPrecision());
+            schema.addExtension(X_PRECISION, declaration.getPrecision());
         }
         if (declaration.getScale() != null) {
-            schema.addExtension("x-json-structure-scale", declaration.getScale());
+            schema.addExtension(X_SCALE, declaration.getScale());
+        }
+        if (declaration.getKind() == JsonStructureTypeKind.OBJECT) {
+            Object additional = declaration.getAdditionalPropertiesType() != null
+                    ? "typed"
+                    : declaration.getAdditionalPropertiesAllowed();
+            schema.addExtension(X_ADDITIONAL_PROPERTIES,
+                    additional == null ? "default-open" : additional);
+        }
+
+        JsonStructureResource resource = graph.resource(declaration.getName());
+        if (resource != null) {
+            schema.addExtension(X_META_SCHEMA_URI, resource.getMetaSchemaUri());
+        }
+        if (resource != null && declaration.getName().equals(resource.getRoot())) {
+            Map<String, List<String>> offers = new LinkedHashMap<>();
+            resource.getOffers().forEach((name, types) -> offers.put(
+                    name,
+                    types.stream().map(QualifiedTypeName::toString).collect(Collectors.toList())));
+            schema.addExtension(X_OFFERS, offers);
+            schema.addExtension(X_USES, resource.getDeclaredUses());
+            schema.addExtension(X_EFFECTIVE_USES, resource.getEffectiveUses());
+            if (resource.getDocumentName() != null) {
+                schema.addExtension(X_DOCUMENT_NAME, resource.getDocumentName());
+            }
+            if (resource.getDescription() != null) {
+                schema.addExtension(X_RESOURCE_DESCRIPTION, resource.getDescription());
+            }
+            if (!resource.getExamples().isEmpty()) {
+                schema.addExtension(X_RESOURCE_EXAMPLES, resource.getExamples());
+            }
         }
         return schema;
     }
@@ -96,18 +158,19 @@ public final class JsonStructureSchemaMapper {
             JsonStructureTypeGraph graph,
             JsonStructureModelCatalog catalog) {
         ObjectSchema own = new ObjectSchema();
-        effectiveProperties(declaration, graph, new LinkedHashSet<>()).forEach((name, type) ->
+        graph.effectiveProperties(declaration.getName()).forEach((name, type) ->
                 own.addProperty(name, typeUseSchema(type, graph, catalog)));
         if (declaration.getAdditionalPropertiesType() != null) {
             own.setAdditionalProperties(typeUseSchema(
                     declaration.getAdditionalPropertiesType(),
                     graph,
                     catalog));
-        } else if (declaration.getAdditionalPropertiesAllowed() != null) {
-            own.setAdditionalProperties(declaration.getAdditionalPropertiesAllowed());
+        } else {
+            own.setAdditionalProperties(
+                    graph.effectiveAdditionalPropertiesAllowed(declaration.getName()));
         }
         List<List<String>> requiredAlternatives =
-                effectiveRequiredAlternatives(declaration, graph, new LinkedHashSet<>());
+                graph.effectiveRequiredAlternatives(declaration.getName());
         if (requiredAlternatives.size() == 1) {
             own.setRequired(requiredAlternatives.get(0));
         } else if (requiredAlternatives.size() > 1) {
@@ -127,11 +190,15 @@ public final class JsonStructureSchemaMapper {
             JsonStructureTypeGraph graph,
             JsonStructureModelCatalog catalog) {
         ObjectSchema tuple = new ObjectSchema();
-        effectiveProperties(declaration, graph, new LinkedHashSet<>()).forEach((name, type) ->
+        graph.effectiveProperties(declaration.getName()).forEach((name, type) ->
                 tuple.addProperty(name, typeUseSchema(type, graph, catalog)));
-        List<String> tupleOrder = effectiveTupleOrder(declaration, graph, new LinkedHashSet<>());
+        List<String> tupleOrder = graph.effectiveTupleOrder(declaration.getName());
         tuple.setRequired(tupleOrder);
         tuple.addExtension(X_TUPLE_ORDER, tupleOrder);
+        Map<String, List<String>> tupleTypes = new LinkedHashMap<>();
+        graph.effectiveProperties(declaration.getName()).forEach((name, type) ->
+                tupleTypes.put(name, type.getOrderedTypeIdentities()));
+        tuple.addExtension("x-json-structure-tuple-types", tupleTypes);
         if (!declaration.getBases().isEmpty()) {
             tuple.addExtension(X_BASES, declaration.getBases().stream()
                     .map(QualifiedTypeName::displayName)
@@ -146,6 +213,7 @@ public final class JsonStructureSchemaMapper {
             JsonStructureModelCatalog catalog) {
         if (compatibilityMode) {
             ObjectSchema choice = new ObjectSchema();
+            choice.addExtension(X_CHOICE_ORDER, List.copyOf(declaration.getChoices().keySet()));
             declaration.getChoices().forEach((name, type) ->
                     choice.addProperty(name, typeUseSchema(type, graph, catalog)));
             choice.addExtension(
@@ -156,6 +224,7 @@ public final class JsonStructureSchemaMapper {
             return choice;
         }
         ComposedSchema choice = new ComposedSchema();
+        choice.addExtension(X_CHOICE_ORDER, List.copyOf(declaration.getChoices().keySet()));
         Map<String, String> mappings = new LinkedHashMap<>();
         declaration.getChoices().forEach((name, type) -> {
             Schema<?> option = typeUseSchema(type, graph, catalog);
@@ -180,80 +249,6 @@ public final class JsonStructureSchemaMapper {
         return choice;
     }
 
-    private Map<String, JsonStructureTypeUse> effectiveProperties(
-            JsonStructureTypeDeclaration declaration,
-            JsonStructureTypeGraph graph,
-            Set<QualifiedTypeName> visiting) {
-        if (!visiting.add(declaration.getName())) {
-            throw new IllegalStateException("Cyclic JSON Structure inheritance at " + declaration.getName());
-        }
-        Map<String, JsonStructureTypeUse> properties = new LinkedHashMap<>();
-        for (QualifiedTypeName base : declaration.getBases()) {
-            JsonStructureTypeDeclaration baseDeclaration = graph.getDeclarations().get(base);
-            effectiveProperties(baseDeclaration, graph, visiting)
-                    .forEach(properties::putIfAbsent);
-        }
-        properties.putAll(declaration.getProperties());
-        visiting.remove(declaration.getName());
-        return properties;
-    }
-
-    private List<List<String>> effectiveRequiredAlternatives(
-            JsonStructureTypeDeclaration declaration,
-            JsonStructureTypeGraph graph,
-            Set<QualifiedTypeName> visiting) {
-        if (!visiting.add(declaration.getName())) {
-            throw new IllegalStateException("Cyclic JSON Structure inheritance at " + declaration.getName());
-        }
-        List<List<String>> result = List.of(List.of());
-        for (QualifiedTypeName base : declaration.getBases()) {
-            JsonStructureTypeDeclaration baseDeclaration = graph.getDeclarations().get(base);
-            result = combineRequired(
-                    result,
-                    effectiveRequiredAlternatives(baseDeclaration, graph, visiting));
-        }
-        result = combineRequired(result, declaration.getRequiredAlternatives());
-        visiting.remove(declaration.getName());
-        if (result.size() == 1 && result.get(0).isEmpty()) {
-            return List.of();
-        }
-        return result;
-    }
-
-    private List<String> effectiveTupleOrder(
-            JsonStructureTypeDeclaration declaration,
-            JsonStructureTypeGraph graph,
-            Set<QualifiedTypeName> visiting) {
-        if (!visiting.add(declaration.getName())) {
-            throw new IllegalStateException("Cyclic JSON Structure inheritance at " + declaration.getName());
-        }
-        Set<String> order = new LinkedHashSet<>();
-        for (QualifiedTypeName base : declaration.getBases()) {
-            JsonStructureTypeDeclaration baseDeclaration = graph.getDeclarations().get(base);
-            order.addAll(effectiveTupleOrder(baseDeclaration, graph, visiting));
-        }
-        order.addAll(declaration.getTupleOrder());
-        visiting.remove(declaration.getName());
-        return List.copyOf(order);
-    }
-
-    private List<List<String>> combineRequired(
-            List<List<String>> left,
-            List<List<String>> right) {
-        if (right.isEmpty()) {
-            return left;
-        }
-        List<List<String>> result = new ArrayList<>();
-        for (List<String> leftAlternative : left) {
-            for (List<String> rightAlternative : right) {
-                Set<String> combined = new LinkedHashSet<>(leftAlternative);
-                combined.addAll(rightAlternative);
-                result.add(List.copyOf(combined));
-            }
-        }
-        return result;
-    }
-
     private List<String> requiredIntersection(List<List<String>> alternatives) {
         Set<String> intersection = new LinkedHashSet<>(alternatives.get(0));
         alternatives.subList(1, alternatives.size()).forEach(intersection::retainAll);
@@ -265,49 +260,84 @@ public final class JsonStructureSchemaMapper {
             JsonStructureTypeGraph graph,
             JsonStructureModelCatalog catalog) {
         if (use == null) {
-            throw new IllegalArgumentException("JSON Structure compound type is missing its element type");
-        }
-        if (use.isReference()) {
-            JsonStructureTypeDeclaration target = graph.getDeclarations().get(use.getReference());
-            Schema<?> reference = new Schema<>().$ref(componentRef(catalog.modelName(use.getReference())));
-            annotate(reference, target.getKind().name().toLowerCase(), target.getWireKind().name().toLowerCase());
-            return reference;
+            throw new IllegalArgumentException(
+                    "JSON Structure compound type is missing its element type");
         }
 
-        List<JsonStructureTypeKind> nonNull = new ArrayList<>();
-        for (JsonStructureTypeKind kind : use.getPrimitiveAlternatives()) {
-            if (kind != JsonStructureTypeKind.NULL) {
-                nonNull.add(kind);
-            }
-        }
         Schema<?> schema;
-        int alternativeCount = nonNull.size() + use.getReferenceAlternatives().size();
-        if (alternativeCount <= 1 && use.getReferenceAlternatives().isEmpty()) {
-            JsonStructureTypeKind kind = nonNull.isEmpty() ? JsonStructureTypeKind.NULL : nonNull.get(0);
-            schema = primitiveSchema(kind);
-            annotate(schema, kind.name().toLowerCase(), kind.wireKind().name().toLowerCase());
+        if (use.getAlternatives().size() == 1) {
+            schema = alternativeSchema(use.getAlternatives().get(0), graph, catalog);
         } else {
             ComposedSchema union = new ComposedSchema();
-            nonNull.forEach(kind -> union.addOneOfItem(primitiveSchema(kind)));
-            use.getReferenceAlternatives().forEach(reference ->
-                    union.addOneOfItem(new Schema<>().$ref(componentRef(catalog.modelName(reference)))));
+            List<Map<String, Object>> alternatives = new ArrayList<>();
+            for (int index = 0; index < use.getAlternatives().size(); index++) {
+                JsonStructureTypeAlternative alternative = use.getAlternatives().get(index);
+                if (!(compatibilityMode
+                        && alternative.isPrimitive()
+                        && alternative.getPrimitiveKind() == JsonStructureTypeKind.NULL)) {
+                    union.addAnyOfItem(alternativeSchema(alternative, graph, catalog));
+                }
+                Map<String, Object> metadata = new LinkedHashMap<>();
+                metadata.put("index", index);
+                metadata.put("identity", alternative.identity());
+                metadata.put("kind", alternative.isPrimitive() ? "primitive" : "reference");
+                if (alternative.getReferenceDescription() != null) {
+                    metadata.put("description", alternative.getReferenceDescription());
+                }
+                alternatives.add(metadata);
+            }
             schema = union;
-            annotate(schema, "union", JsonWireKind.ANY.name().toLowerCase());
+            annotate(schema, "union", JsonWireKind.ANY.name().toLowerCase(Locale.ROOT));
+            schema.addExtension(X_UNION_ORDER, use.getOrderedTypeIdentities());
+            schema.addExtension(X_UNION_MATCHING, "first-match");
+            schema.addExtension(X_REFERENCE_ALTERNATIVES, alternatives);
+            if (compatibilityMode && use.isNullable()) {
+                schema.setNullable(true);
+            }
         }
-        if (use.isNullable()) {
-            schema.setNullable(true);
-        }
+
         if (use.getPrecision() != null) {
-            schema.addExtension("x-json-structure-precision", use.getPrecision());
+            schema.addExtension(X_PRECISION, use.getPrecision());
         }
         if (use.getScale() != null) {
-            schema.addExtension("x-json-structure-scale", use.getScale());
+            schema.addExtension(X_SCALE, use.getScale());
         }
         if (use.getMaxLength() != null) {
             schema.setMaxLength(use.getMaxLength());
         }
+        applyDocumentation(schema, use.getDescription(), use.getExamples());
         applyValueConstraints(schema, use);
         return schema;
+    }
+
+    private Schema<?> alternativeSchema(
+            JsonStructureTypeAlternative alternative,
+            JsonStructureTypeGraph graph,
+            JsonStructureModelCatalog catalog) {
+        if (alternative.isReference()) {
+            QualifiedTypeName name = alternative.getReference();
+            JsonStructureTypeDeclaration target = graph.getDeclarations().get(name);
+            Schema<?> reference = new Schema<>().$ref(componentRef(catalog.modelName(name)));
+            annotate(
+                    reference,
+                    target.getLogicalTypeName(),
+                    graph.effectiveWireKind(name).name().toLowerCase(Locale.ROOT));
+            if (alternative.getReferenceDescription() != null) {
+                reference.setDescription(alternative.getReferenceDescription());
+                reference.addExtension(
+                        X_REFERENCE_DESCRIPTION, alternative.getReferenceDescription());
+            }
+            reference.addExtension(X_EFFECTIVE_ID, name.toString());
+            reference.addExtension(X_ORIGIN, target.getOrigin().toString());
+            return reference;
+        }
+        JsonStructureTypeKind kind = alternative.getPrimitiveKind();
+        Schema<?> primitive = primitiveSchema(kind);
+        annotate(
+                primitive,
+                alternative.getPrimitiveName(),
+                kind.wireKind().name().toLowerCase(Locale.ROOT));
+        return primitive;
     }
 
     @SuppressWarnings("unchecked")
@@ -317,18 +347,37 @@ public final class JsonStructureSchemaMapper {
         }
         if (!use.getEnumValues().isEmpty()) {
             ((Schema<Object>) schema).setEnum(use.getEnumValues());
+            schema.addExtension(X_ENUM_VALUES, use.getEnumValues());
         }
         if (use.hasConst()) {
             schema.setConst(use.getConstValue());
+            schema.addExtension(X_HAS_CONST, true);
+            schema.addExtension(X_CONST_VALUE, use.getConstValue());
         }
         if (use.getContentEncoding() != null) {
             schema.setContentEncoding(use.getContentEncoding());
         }
         if (use.getContentCompression() != null) {
-            schema.addExtension("x-json-structure-content-compression", use.getContentCompression());
+            schema.addExtension(X_CONTENT_COMPRESSION, use.getContentCompression());
         }
         if (use.getContentMediaType() != null) {
             schema.setContentMediaType(use.getContentMediaType());
+        }
+        if (use.getContentEncoding() != null
+                && !"base64".equals(use.getContentEncoding())
+                && "byte".equals(schema.getFormat())) {
+            schema.setFormat(null);
+        }
+    }
+
+    @SuppressWarnings("unchecked")
+    private void applyDocumentation(
+            Schema<?> schema, String description, List<Object> examples) {
+        if (description != null) {
+            schema.setDescription(description);
+        }
+        if (!examples.isEmpty()) {
+            ((Schema<Object>) schema).setExamples(examples);
         }
     }
 
@@ -377,8 +426,17 @@ public final class JsonStructureSchemaMapper {
             case UUID:
                 schema.setFormat("uuid");
                 break;
+            case TIME:
+                schema.setFormat("time");
+                break;
+            case DURATION:
+                schema.setFormat("duration");
+                break;
+            case JSON_POINTER:
+                schema.setFormat("json-pointer");
+                break;
             case URI:
-                schema.setFormat("uri");
+                schema.setFormat("uri-reference");
                 break;
             case BINARY:
                 schema.setFormat("byte");

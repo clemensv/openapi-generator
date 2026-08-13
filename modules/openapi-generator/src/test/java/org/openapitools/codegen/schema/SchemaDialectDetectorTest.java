@@ -80,6 +80,25 @@ public class SchemaDialectDetectorTest {
     }
 
     @Test
+    public void givesExplicitSchemaPrecedenceOnRefWrappers() throws Exception {
+        String source = "openapi: 3.1.0\n"
+                + "components:\n"
+                + "  schemas:\n"
+                + "    ExplicitJsonStructure:\n"
+                + "      $schema: https://json-structure.org/meta/core/v0/#\n"
+                + "      $ref: '#/components/schemas/Person'\n"
+                + "    Unknown:\n"
+                + "      $schema: https://example.com/meta/unknown\n"
+                + "      $ref: '#/components/schemas/Person'\n";
+
+        Map<String, SchemaDialect> dialects =
+                SchemaDialectDetector.componentSchemaDialects(Yaml.mapper().readTree(source));
+
+        assertEquals(dialects.get("ExplicitJsonStructure"), SchemaDialect.JSON_STRUCTURE_CORE);
+        assertEquals(dialects.get("Unknown"), SchemaDialect.UNKNOWN);
+    }
+
+    @Test
     public void detectsInlineJsonStructureButExcludesComponentsSchemasAndRefWrappers() throws Exception {
         String inline = "openapi: 3.1.0\n"
                 + "jsonSchemaDialect: https://json-structure.org/meta/core/v0/#\n"
@@ -109,5 +128,69 @@ public class SchemaDialectDetectorTest {
                 Yaml.mapper().readTree(inline)));
         assertFalse(SchemaDialectDetector.containsInlineJsonStructureSchemas(
                 Yaml.mapper().readTree(componentsOnly)));
+    }
+
+    @Test
+    public void requiresByteExactCanonicalUrisAndExplicitCustomMappings() {
+        assertEquals(
+                SchemaDialectDetector.fromUri(
+                        "https://json-structure.org/meta/core/v0/"),
+                SchemaDialect.UNKNOWN);
+        assertEquals(
+                SchemaDialectDetector.fromUri(
+                        "https://json-structure.org/meta/core/v0/#fragment"),
+                SchemaDialect.UNKNOWN);
+
+        Map<String, SchemaDialect> configured = Map.of(
+                "https://example.com/meta/custom",
+                SchemaDialect.JSON_STRUCTURE_EXTENDED);
+        assertEquals(
+                SchemaDialectDetector.fromUri(
+                        "https://example.com/meta/custom", configured),
+                SchemaDialect.JSON_STRUCTURE_EXTENDED);
+        assertEquals(
+                SchemaDialectDetector.fromUri(
+                        "https://example.com/meta/Custom", configured),
+                SchemaDialect.UNKNOWN);
+    }
+
+    @Test
+    public void detectsUnknownInlineDialectWithoutTreatingItAsOas() throws Exception {
+        String source = "openapi: 3.1.0\n"
+                + "paths:\n"
+                + "  /value:\n"
+                + "    get:\n"
+                + "      responses:\n"
+                + "        '200':\n"
+                + "          description: ok\n"
+                + "          content:\n"
+                + "            application/json:\n"
+                + "              schema:\n"
+                + "                $schema: https://example.com/meta/unknown\n"
+                + "                type: object\n";
+
+        assertTrue(SchemaDialectDetector.containsInlineUnknownSchemaDialects(
+                Yaml.mapper().readTree(source), Map.of()));
+        assertFalse(SchemaDialectDetector.containsInlineJsonStructureSchemas(
+                Yaml.mapper().readTree(source), Map.of()));
+    }
+
+    @Test
+    public void detectsExplicitInlineDialectOnRefWrappers() throws Exception {
+        String source = "openapi: 3.1.0\n"
+                + "paths:\n"
+                + "  /value:\n"
+                + "    get:\n"
+                + "      responses:\n"
+                + "        '200':\n"
+                + "          description: ok\n"
+                + "          content:\n"
+                + "            application/json:\n"
+                + "              schema:\n"
+                + "                $schema: https://example.com/meta/unknown\n"
+                + "                $ref: '#/components/schemas/Value'\n";
+
+        assertTrue(SchemaDialectDetector.containsInlineUnknownSchemaDialects(
+                Yaml.mapper().readTree(source), Map.of()));
     }
 }

@@ -33,7 +33,7 @@ public final class JsonStructureModelCatalog {
         graph.getDeclarations().values().forEach(declaration -> {
             if (!modelNamesByDeclaration.containsKey(declaration.getName())) {
                 String componentName = graph.getComponentByResourceId()
-                        .getOrDefault(declaration.getName().getResourceId(), "JsonStructure");
+                        .getOrDefault(declaration.getName().getResourceIdentity(), "JsonStructure");
                 String candidate = componentName + "_" + declaration.getName().displayName().replace('.', '_');
                 register(
                         uniqueName(candidate),

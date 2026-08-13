@@ -20,6 +20,7 @@ import java.io.IOException;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.List;
+import java.util.Locale;
 
 public class JsonStructureFocusedGenerationTest {
     private static final String RESOURCE_ROOT = "src/test/resources/3_1/";
@@ -79,6 +80,20 @@ public class JsonStructureFocusedGenerationTest {
                 {"php", "lib/Model/Consumer.php",
                         "lib/Model/ConsumerCommonGeometryPoint.php",
                         "lib/Model/ConsumerCommonMetadataPoint.php"}
+        };
+    }
+
+    @DataProvider(name = "advancedGenerationMatrix")
+    public Object[][] advancedGenerationMatrix() {
+        return new Object[][]{
+                {"java"},
+                {"csharp"},
+                {"go"},
+                {"python"},
+                {"typescript-fetch"},
+                {"kotlin"},
+                {"rust"},
+                {"php"}
         };
     }
 
@@ -143,19 +158,20 @@ public class JsonStructureFocusedGenerationTest {
             Assert.assertTrue(
                     generated.stream()
                             .map(File::getName)
-                            .anyMatch(name -> name.toLowerCase().contains(expectedModel.toLowerCase())),
+                            .anyMatch(name -> name.toLowerCase(Locale.ROOT)
+                                    .contains(expectedModel.toLowerCase(Locale.ROOT))),
                     generatorName + " did not generate model " + expectedModel + " for " + fixture);
         } finally {
             target.toFile().deleteOnExit();
         }
     }
 
-    @Test
-    public void rejectsAdvancedWireShapesInStrictMode() throws IOException {
-        Path target = Files.createTempDirectory("json-structure-wire-strict");
+    @Test(dataProvider = "advancedGenerationMatrix")
+    public void rejectsAdvancedWireShapesInStrictMode(String generatorName) throws IOException {
+        Path target = Files.createTempDirectory("json-structure-wire-strict-" + generatorName);
         try {
             ClientOptInput input = new CodegenConfigurator()
-                    .setGeneratorName("java")
+                    .setGeneratorName(generatorName)
                     .setInputSpec(RESOURCE_ROOT + "json-structure-wire-shapes.yaml")
                     .setOutputDir(target.toAbsolutePath().toString())
                     .toClientOptInput();
@@ -174,12 +190,12 @@ public class JsonStructureFocusedGenerationTest {
         }
     }
 
-    @Test
-    public void allowsAdvancedWireShapesOnlyInCompatibilityMode() throws IOException {
-        Path target = Files.createTempDirectory("json-structure-wire-compatibility");
+    @Test(dataProvider = "advancedGenerationMatrix")
+    public void allowsAdvancedWireShapesOnlyInCompatibilityMode(String generatorName) throws IOException {
+        Path target = Files.createTempDirectory("json-structure-wire-compatibility-" + generatorName);
         try {
             ClientOptInput input = new CodegenConfigurator()
-                    .setGeneratorName("java")
+                    .setGeneratorName(generatorName)
                     .setInputSpec(RESOURCE_ROOT + "json-structure-wire-shapes.yaml")
                     .setOutputDir(target.toAbsolutePath().toString())
                     .addAdditionalProperty(CodegenConstants.JSON_STRUCTURE_COMPATIBILITY_MODE, true)
@@ -190,11 +206,13 @@ public class JsonStructureFocusedGenerationTest {
             Assert.assertTrue(
                     generated.stream().map(File::getName).anyMatch(name -> name.contains("Envelope")),
                     "Compatibility mode did not generate the advanced root model");
-            String eventModel = Files.readString(
-                    target.resolve("src/main/java/org/openapitools/client/model/EnvelopeEvent.java"));
-            Assert.assertFalse(
-                    eventModel.contains("CodegenProperty{"),
-                    "Compatibility choice mapping leaked codegen metadata into generated Java");
+            if ("java".equals(generatorName)) {
+                String eventModel = Files.readString(
+                        target.resolve("src/main/java/org/openapitools/client/model/EnvelopeEvent.java"));
+                Assert.assertFalse(
+                        eventModel.contains("CodegenProperty{"),
+                        "Compatibility choice mapping leaked codegen metadata into generated Java");
+            }
         } finally {
             target.toFile().deleteOnExit();
         }

@@ -13,17 +13,23 @@ import java.util.Objects;
 
 public final class QualifiedTypeName {
     private final URI resourceId;
+    private final String resourceIdentity;
     private final List<String> namespace;
     private final String localName;
 
     public QualifiedTypeName(URI resourceId, List<String> namespace, String localName) {
         this.resourceId = Objects.requireNonNull(resourceId);
+        this.resourceIdentity = resourceId.toString();
         this.namespace = List.copyOf(namespace);
         this.localName = Objects.requireNonNull(localName);
     }
 
     public URI getResourceId() {
         return resourceId;
+    }
+
+    public String getResourceIdentity() {
+        return resourceIdentity;
     }
 
     public List<String> getNamespace() {
@@ -47,18 +53,18 @@ public final class QualifiedTypeName {
             return false;
         }
         QualifiedTypeName that = (QualifiedTypeName) other;
-        return resourceId.equals(that.resourceId)
+        return resourceIdentity.equals(that.resourceIdentity)
                 && namespace.equals(that.namespace)
                 && localName.equals(that.localName);
     }
 
     @Override
     public int hashCode() {
-        return Objects.hash(resourceId, namespace, localName);
+        return Objects.hash(resourceIdentity, namespace, localName);
     }
 
     @Override
     public String toString() {
-        return resourceId + "#" + displayName();
+        return resourceIdentity + "#" + displayName();
     }
 }

@@ -16,6 +16,8 @@ import org.openapitools.codegen.CodegenProperty;
 import org.openapitools.codegen.DefaultCodegen;
 import org.testng.annotations.Test;
 
+import java.util.List;
+import java.util.Locale;
 import java.util.Map;
 import java.util.Set;
 import java.util.stream.Collectors;
@@ -56,6 +58,9 @@ public class JsonStructureCodegenTest {
                 .collect(Collectors.toMap(CodegenProperty::getBaseName, value -> value));
 
         assertEquals(model.getSchemaDialect(), "json-structure");
+        assertEquals(
+                model.getJsonStructureMetaSchemaUri(),
+                "https://json-structure.org/meta/extended/v0/#");
         assertEquals(model.getLogicalType(), "object");
         assertEquals(model.getWireType(), "object");
         assertEquals(properties.get("sequence").getLogicalType(), "int64");
@@ -157,6 +162,9 @@ public class JsonStructureCodegenTest {
         assertTrue(properties.get("id").required);
         assertEquals(properties.get("id").getLogicalType(), "uuid");
         assertTrue(model.getParentModel() == null);
+        assertEquals(
+                model.getJsonStructureBaseTypes(),
+                List.of("https://api.example.com/event#Base"));
     }
 
     @Test
@@ -214,7 +222,8 @@ public class JsonStructureCodegenTest {
         JsonStructureTypeGraph graph = new JsonStructureResolver().resolve(Yaml.mapper().readTree(source));
         JsonStructureModelCatalog catalog = new JsonStructureModelCatalog(graph);
 
-        assertTrue(catalog.modelNames().stream().anyMatch(name -> name.toLowerCase().contains("payload")));
+        assertTrue(catalog.modelNames().stream()
+                .anyMatch(name -> name.toLowerCase(Locale.ROOT).contains("payload")));
     }
 
     @Test
@@ -281,5 +290,91 @@ public class JsonStructureCodegenTest {
         assertEquals(
                 pointProperty.getVendorExtensions().get(JsonStructureSchemaMapper.X_ORIGIN),
                 "https://api.example.com/shared#Geometry.Point");
+    }
+
+    @Test
+    public void preservesCoreUnionDocumentationAndAddInsThroughCodegen() throws Exception {
+        String source = "openapi: 3.1.0\n"
+                + "components:\n"
+                + "  schemas:\n"
+                + "    Envelope:\n"
+                + "      $schema: https://json-structure.org/meta/extended/v0/#\n"
+                + "      $id: https://api.example.com/envelope\n"
+                + "      $uses: [JSONStructureUnits]\n"
+                + "      name: EnvelopeDocument\n"
+                + "      $root: '#/definitions/Envelope'\n"
+                + "      description: Envelope resource\n"
+                + "      examples: [{ amount: '12.50' }]\n"
+                + "      $offers: { Audit: '#/definitions/Audit' }\n"
+                + "      definitions:\n"
+                + "        Record:\n"
+                + "          type: object\n"
+                + "          properties: { id: { type: uuid } }\n"
+                + "        Envelope:\n"
+                + "          type: object\n"
+                + "          additionalProperties: false\n"
+                + "          properties:\n"
+                + "            amount:\n"
+                + "              type: decimal\n"
+                + "              precision: 12\n"
+                + "              scale: 2\n"
+                + "              description: Exact amount\n"
+                + "              examples: ['12.50', '0.00']\n"
+                + "            value:\n"
+                + "              type: [number, int32, 'null']\n"
+                + "            status: { type: string, enum: [open, closed] }\n"
+                + "            version: { type: int32, const: 1 }\n"
+                + "            record:\n"
+                + "              description: Outer record\n"
+                + "              type:\n"
+                + "                $ref: '#/definitions/Record'\n"
+                + "                description: Reference context\n"
+                + "        Audit:\n"
+                + "          type: object\n"
+                + "          abstract: true\n"
+                + "          $extends: '#/definitions/Envelope'\n"
+                + "          properties: { auditId: { type: uuid } }\n";
+
+        JsonStructureTypeGraph graph = new JsonStructureResolver().resolve(Yaml.mapper().readTree(source));
+        JsonStructureModelCatalog catalog = new JsonStructureModelCatalog(graph);
+        DefaultCodegen codegen = new DefaultCodegen();
+        codegen.setJsonStructureCompatibilityMode(true);
+        codegen.setOpenAPI(new OpenAPI().openapi("3.1.0").components(new Components()));
+        codegen.prepareJsonStructureTypes(graph, catalog);
+
+        CodegenModel model = codegen.fromJsonStructureType(
+                "Envelope", catalog.declaration("Envelope"), graph, catalog);
+        Map<String, CodegenProperty> properties = model.getVars().stream()
+                .collect(Collectors.toMap(CodegenProperty::getBaseName, value -> value));
+
+        assertEquals(model.getOfferedAddIns().get("Audit").size(), 1);
+        assertEquals(model.getJsonStructureDocumentName(), "EnvelopeDocument");
+        assertEquals(model.getJsonStructureResourceDescription(), "Envelope resource");
+        assertEquals(
+                model.getJsonStructureResourceExamples(),
+                List.of(Map.of("amount", "12.50")));
+        assertEquals(model.getUsedAddIns(), List.of("JSONStructureUnits"));
+        assertTrue(model.getEffectiveAddIns().contains("JSONStructureImport"));
+        assertEquals(model.getJsonStructureAdditionalPropertiesAllowed(), Boolean.FALSE);
+
+        CodegenProperty amount = properties.get("amount");
+        assertEquals(amount.getJsonStructurePrecision(), Integer.valueOf(12));
+        assertEquals(amount.getJsonStructureScale(), Integer.valueOf(2));
+        assertEquals(amount.getSchemaExamples(), List.of("12.50", "0.00"));
+        assertEquals(amount.getDescription(), "Exact amount");
+
+        CodegenProperty value = properties.get("value");
+        assertEquals(value.getUnionTypeOrder(), List.of("number", "int32", "null"));
+        assertEquals(value.getUnionMatchingSemantics(), "first-match");
+
+        assertEquals(
+                properties.get("status").getJsonStructureEnumValues(),
+                List.of("open", "closed"));
+        assertTrue(properties.get("version").isJsonStructureHasConst());
+        assertEquals(properties.get("version").getJsonStructureConstValue(), 1);
+
+        CodegenProperty record = properties.get("record");
+        assertEquals(record.getReferenceDescription(), "Reference context");
+        assertEquals(record.getDescription(), "Outer record");
     }
 }
