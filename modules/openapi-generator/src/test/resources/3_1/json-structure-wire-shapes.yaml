@@ -1,0 +1,93 @@
+openapi: 3.1.0
+info:
+  title: JSON Structure advanced wire shapes
+  version: 1.0.0
+paths:
+  /envelopes:
+    post:
+      operationId: createEnvelope
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/Envelope'
+      responses:
+        '200':
+          description: Envelope
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Envelope'
+components:
+  schemas:
+    Envelope:
+      $schema: https://json-structure.org/meta/core/v0/#
+      $id: https://api.example.com/schemas/envelope
+      $root: '#/definitions/Envelope'
+      definitions:
+        Coordinates:
+          name: Coordinates
+          type: tuple
+          properties:
+            latitude:
+              type: double
+            longitude:
+              type: double
+          tuple:
+            - latitude
+            - longitude
+        Created:
+          name: Created
+          type: object
+          properties:
+            id:
+              type: uuid
+        Deleted:
+          name: Deleted
+          type: object
+          properties:
+            reason:
+              type: string
+        Event:
+          name: Event
+          type: choice
+          choices:
+            created:
+              type:
+                $ref: '#/definitions/Created'
+            deleted:
+              type:
+                $ref: '#/definitions/Deleted'
+        Value:
+          type:
+            - string
+            - int32
+            - 'null'
+        Envelope:
+          name: Envelope
+          type: object
+          required:
+            - - event
+            - - value
+          properties:
+            sequence:
+              type: uint64
+            amount:
+              type: decimal
+              precision: 18
+              scale: 4
+            coordinates:
+              type:
+                $ref: '#/definitions/Coordinates'
+            event:
+              type:
+                $ref: '#/definitions/Event'
+            value:
+              type:
+                $ref: '#/definitions/Value'
+            attachment:
+              type: binary
+              contentEncoding: base32
+              contentCompression: gzip
+              contentMediaType: application/octet-stream

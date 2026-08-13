@@ -18,6 +18,7 @@
 package org.openapitools.codegen.config;
 
 import com.fasterxml.jackson.databind.Module;
+import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.fasterxml.jackson.datatype.guava.GuavaModule;
 import io.swagger.parser.OpenAPIParser;
@@ -35,11 +36,17 @@ import org.openapitools.codegen.api.TemplateDefinition;
 import org.openapitools.codegen.api.TemplatingEngineAdapter;
 import org.openapitools.codegen.auth.AuthParser;
 import org.openapitools.codegen.utils.ModelUtils;
+import org.openapitools.codegen.schema.SchemaDialectDetector;
+import org.openapitools.codegen.schema.jsonstructure.JsonStructureResolutionOptions;
+import org.openapitools.codegen.schema.jsonstructure.JsonStructureResolver;
+import org.openapitools.codegen.schema.jsonstructure.JsonStructureTypeGraph;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
 import java.io.File;
 import java.io.IOException;
+import java.net.URI;
+import java.nio.file.Paths;
 import java.util.*;
 
 import static org.apache.commons.lang3.StringUtils.isEmpty;
@@ -84,11 +91,40 @@ public class CodegenConfigurator {
     private Map<String, String> reservedWordsMappings = new HashMap<>();
     private Map<String, String> serverVariables = new HashMap<>();
     private String auth;
+    private JsonStructureResolutionOptions jsonStructureResolutionOptions =
+            new JsonStructureResolutionOptions();
 
     private List<TemplateDefinition> userDefinedTemplates = new ArrayList<>();
 
     public CodegenConfigurator() {
 
+    }
+
+    public JsonStructureResolutionOptions getJsonStructureResolutionOptions() {
+        return jsonStructureResolutionOptions;
+    }
+
+    public CodegenConfigurator setJsonStructureResolutionOptions(
+            JsonStructureResolutionOptions options) {
+        this.jsonStructureResolutionOptions = Objects.requireNonNull(options);
+        return this;
+    }
+
+    public CodegenConfigurator addVerifiedJsonStructureMetaSchema(
+            String customMetaSchemaUri, String canonicalMetaSchemaUri) {
+        jsonStructureResolutionOptions.addVerifiedCustomMetaSchema(
+                customMetaSchemaUri, canonicalMetaSchemaUri);
+        return this;
+    }
+
+    public CodegenConfigurator setJsonStructureEncapsulatingEntityBaseUri(String value) {
+        jsonStructureResolutionOptions.setEncapsulatingEntityBaseUri(URI.create(value));
+        return this;
+    }
+
+    public CodegenConfigurator setJsonStructureApplicationDefaultBaseUri(String value) {
+        jsonStructureResolutionOptions.setApplicationDefaultBaseUri(URI.create(value));
+        return this;
     }
 
     public static CodegenConfigurator fromFile(String configFile, Module... modules) {
@@ -735,6 +771,12 @@ public class CodegenConfigurator {
         options.setResolve(true);
         options.setResolveResponses(true);
         SwaggerParseResult result = new OpenAPIParser().readLocation(inputSpec, authorizationValues, options);
+        JsonNode rawSpecification;
+        try {
+            rawSpecification = ModelUtils.readWithInfo(inputSpec, authorizationValues);
+        } catch (Exception e) {
+            throw new RuntimeException("Unable to read the source OpenAPI document: " + inputSpec, e);
+        }
 
         // TODO: Move custom validations to a separate type as part of a "Workflow"
         Set<String> validationMessages = new HashSet<>(null != result.getMessages() ? result.getMessages() : new ArrayList<>());
@@ -788,7 +830,47 @@ public class CodegenConfigurator {
             }
         }
 
-        return new Context<>(specification, generatorSettings, workflowSettings);
+        Context<OpenAPI> context = new Context<>(specification, generatorSettings, workflowSettings);
+        context.setRawSpecDocument(rawSpecification);
+        Map<String, org.openapitools.codegen.schema.SchemaDialect> customMetaSchemas =
+                jsonStructureResolutionOptions.getVerifiedCustomMetaSchemas();
+        if (SchemaDialectDetector.containsUnknownSchemaDialects(
+                rawSpecification, customMetaSchemas)
+                || SchemaDialectDetector.containsInlineUnknownSchemaDialects(
+                        rawSpecification, customMetaSchemas)) {
+            throw new IllegalArgumentException(
+                    "The OpenAPI Description contains an unknown schema dialect. "
+                            + "Refusing to process it as OAS/JSON Schema; configure a verified custom "
+                            + "JSON Structure meta-schema mapping if applicable.");
+        }
+        if (SchemaDialectDetector.containsInlineJsonStructureSchemas(
+                rawSpecification, customMetaSchemas)) {
+            throw new IllegalArgumentException(
+                    "Inline JSON Structure Schema Objects outside components.schemas are not supported. "
+                            + "Move the schema to components.schemas and reference it with an OpenAPI $ref.");
+        }
+        if (SchemaDialectDetector.containsJsonStructureSchemas(
+                rawSpecification, customMetaSchemas)) {
+            context.setSchemaTypeGraph(new JsonStructureResolver().resolve(
+                    rawSpecification,
+                    retrievalUri(inputSpec),
+                    jsonStructureResolutionOptions));
+        }
+        return context;
+    }
+
+    private URI retrievalUri(String location) {
+        if (!location.matches("^[A-Za-z]:[\\\\/].*")) {
+            try {
+                URI uri = URI.create(location.replace('\\', '/'));
+                if (uri.isAbsolute()) {
+                    return uri;
+                }
+            } catch (IllegalArgumentException ignored) {
+                // Fall through to treating the input as a local path.
+            }
+        }
+        return Paths.get(location).toAbsolutePath().toUri();
     }
 
     public ClientOptInput toClientOptInput() {
@@ -861,6 +943,9 @@ public class CodegenConfigurator {
                 .generatorSettings(generatorSettings)
                 .userDefinedTemplates(userDefinedTemplates);
 
-        return input.openAPI((OpenAPI) context.getSpecDocument());
+        return input
+                .rawOpenAPI((JsonNode) context.getRawSpecDocument())
+                .jsonStructureTypeGraph((JsonStructureTypeGraph) context.getSchemaTypeGraph())
+                .openAPI((OpenAPI) context.getSpecDocument());
     }
 }

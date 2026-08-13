@@ -36,6 +36,7 @@ import io.swagger.v3.parser.util.ClasspathHelper;
 import io.swagger.v3.parser.util.RemoteUrl;
 import io.swagger.v3.parser.util.SchemaTypeUtil;
 import org.apache.commons.io.FileUtils;
+import org.apache.commons.io.IOUtils;
 import org.apache.commons.lang3.StringUtils;
 import org.jspecify.annotations.NonNull;
 import org.jspecify.annotations.Nullable;
@@ -49,6 +50,7 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.slf4j.helpers.MessageFormatter;
 
+import java.io.InputStream;
 import java.math.BigDecimal;
 import java.net.URI;
 import java.net.URLDecoder;
@@ -2260,6 +2262,10 @@ public class ModelUtils {
         location = location.replaceAll("\\\\", "/");
         if (location.toLowerCase(Locale.ROOT).startsWith("http")) {
             data = RemoteUrl.urlToString(location, auths);
+        } else if (location.toLowerCase(Locale.ROOT).startsWith("jar:")) {
+            try (InputStream stream = URI.create(location).toURL().openStream()) {
+                data = IOUtils.toString(stream, StandardCharsets.UTF_8);
+            }
         } else {
             final String fileScheme = "file:";
             Path path;

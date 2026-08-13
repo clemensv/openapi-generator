@@ -1,0 +1,65 @@
+openapi: 3.1.0
+info:
+  title: JSON Structure namespace preservation
+  version: 1.0.0
+paths:
+  /consumer:
+    get:
+      operationId: getConsumer
+      responses:
+        '200':
+          description: Consumer
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Consumer'
+components:
+  schemas:
+    Shared:
+      $schema: https://json-structure.org/meta/extended/v0/#
+      $id: https://api.example.com/schemas/shared
+      definitions:
+        Geometry:
+          Point:
+            name: Point
+            type: object
+            required: [x]
+            properties:
+              x: { type: double }
+          Vector:
+            name: Vector
+            type: object
+            required: [x, y]
+            properties:
+              x: { type: double }
+              y: { type: double }
+        Metadata:
+          Point:
+            name: Point
+            type: object
+            required: [label]
+            properties:
+              label: { type: string }
+    Consumer:
+      $schema: https://json-structure.org/meta/extended/v0/#
+      $id: https://api.example.com/schemas/consumer
+      $root: '#/definitions/Envelope'
+      definitions:
+        Common:
+          $importdefs: https://api.example.com/schemas/shared
+        Envelope:
+          name: Envelope
+          type: object
+          required: [geometry, metadata, vectors]
+          properties:
+            geometry:
+              type:
+                $ref: '#/definitions/Common/Geometry/Point'
+            metadata:
+              type:
+                $ref: '#/definitions/Common/Metadata/Point'
+            vectors:
+              type: array
+              items:
+                type:
+                  $ref: '#/definitions/Common/Geometry/Vector'

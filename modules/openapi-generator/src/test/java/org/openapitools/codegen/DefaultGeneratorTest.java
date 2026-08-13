@@ -17,6 +17,7 @@ import org.openapitools.codegen.model.ModelMap;
 import org.openapitools.codegen.model.OperationsMap;
 import org.openapitools.codegen.utils.ModelUtils;
 import org.testng.Assert;
+import org.testng.annotations.DataProvider;
 import org.testng.annotations.Test;
 
 import java.io.File;
@@ -77,6 +78,110 @@ public class DefaultGeneratorTest {
         } finally {
             output.deleteOnExit();
         }
+    }
+
+    @Test
+    public void generatesJsonStructureLogicalTypes() throws IOException {
+        Path target = Files.createTempDirectory("json-structure-java");
+        try {
+            ClientOptInput input = new CodegenConfigurator()
+                    .setGeneratorName("java")
+                    .setInputSpec("src/test/resources/3_1/json-structure-core.yaml")
+                    .setOutputDir(target.toAbsolutePath().toString())
+                    .addAdditionalProperty(CodegenConstants.JSON_STRUCTURE_COMPATIBILITY_MODE, true)
+                    .toClientOptInput();
+
+            new DefaultGenerator().opts(input).generate();
+
+            String model = Files.readString(
+                    target.resolve(
+                            "src/main/java/org/openapitools/client/model/Measurement/Measurement.java"));
+            Assert.assertTrue(model.contains("private Long sequence;"), model);
+            Assert.assertTrue(model.contains("private BigDecimal reading;"), model);
+            Assert.assertTrue(model.contains("private Set<String> tags"), model);
+            Assert.assertTrue(model.contains("import java.math.BigDecimal;"), model);
+            Assert.assertTrue(model.contains("import java.util.Set;"), model);
+            Assert.assertFalse(model.contains("org.openapitools.client.model.Set"), model);
+        } finally {
+            target.toFile().deleteOnExit();
+        }
+    }
+
+    @Test
+    public void generatesMixedOasAndJsonStructureModels() throws IOException {
+        Path target = Files.createTempDirectory("json-structure-mixed-java");
+        try {
+            ClientOptInput input = new CodegenConfigurator()
+                    .setGeneratorName("java")
+                    .setInputSpec("src/test/resources/3_1/json-structure-mixed.yaml")
+                    .setOutputDir(target.toAbsolutePath().toString())
+                    .toClientOptInput();
+
+            new DefaultGenerator().opts(input).generate();
+
+            String event = Files.readString(
+                    target.resolve("src/main/java/org/openapitools/client/model/Event/Event.java"));
+            String legacy = Files.readString(
+                    target.resolve("src/main/java/org/openapitools/client/model/Legacy.java"));
+            Assert.assertTrue(event.contains("private UUID id;"), event);
+            Assert.assertTrue(event.contains("private String value;"), event);
+            Assert.assertFalse(event.contains(" extends "), event);
+            Assert.assertTrue(legacy.contains("private String legacyId;"), legacy);
+        } finally {
+            target.toFile().deleteOnExit();
+        }
+    }
+
+    @Test
+    public void rejectsInlineJsonStructureSchemas() throws IOException {
+        Path input = Files.createTempFile("json-structure-inline", ".yaml");
+        Files.writeString(input, "openapi: 3.1.0\n"
+                + "info: { title: Inline, version: 1.0.0 }\n"
+                + "jsonSchemaDialect: https://json-structure.org/meta/core/v0/#\n"
+                + "paths:\n"
+                + "  /items:\n"
+                + "    post:\n"
+                + "      requestBody:\n"
+                + "        content:\n"
+                + "          application/json:\n"
+                + "            schema: { name: Item, type: object }\n"
+                + "      responses:\n"
+                + "        '204': { description: accepted }\n");
+
+        IllegalArgumentException exception = Assert.expectThrows(
+                IllegalArgumentException.class,
+                () -> new CodegenConfigurator()
+                        .setGeneratorName("java")
+                        .setInputSpec(input.toAbsolutePath().toString())
+                        .toClientOptInput());
+
+        Assert.assertTrue(exception.getMessage().contains("components.schemas"), exception.getMessage());
+        input.toFile().deleteOnExit();
+    }
+
+    @Test
+    public void resetsJsonStructureStateWhenGeneratorIsReused() {
+        class InspectableDefaultGenerator extends DefaultGenerator {
+            boolean hasJsonStructureState() {
+                return jsonStructureTypeGraph != null || jsonStructureModelCatalog != null;
+            }
+        }
+
+        InspectableDefaultGenerator generator = new InspectableDefaultGenerator();
+        ClientOptInput jsonStructureInput = new CodegenConfigurator()
+                .setGeneratorName("java")
+                .setInputSpec("src/test/resources/3_1/json-structure-core.yaml")
+                .addAdditionalProperty(CodegenConstants.JSON_STRUCTURE_COMPATIBILITY_MODE, true)
+                .toClientOptInput();
+        ClientOptInput oasInput = new CodegenConfigurator()
+                .setGeneratorName("java")
+                .setInputSpec("src/test/resources/3_0/pingSomeObj.yaml")
+                .toClientOptInput();
+
+        generator.opts(jsonStructureInput);
+        Assert.assertTrue(generator.hasJsonStructureState());
+        generator.opts(oasInput);
+        Assert.assertFalse(generator.hasJsonStructureState());
     }
 
     @Test

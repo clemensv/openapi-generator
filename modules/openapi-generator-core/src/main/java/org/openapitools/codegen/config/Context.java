@@ -23,6 +23,8 @@ package org.openapitools.codegen.config;
  */
 public class Context<TSpecDocument> {
     private TSpecDocument specDocument;
+    private Object rawSpecDocument;
+    private Object schemaTypeGraph;
     private GeneratorSettings generatorSettings;
     private WorkflowSettings workflowSettings;
 
@@ -55,6 +57,22 @@ public class Context<TSpecDocument> {
      */
     public TSpecDocument getSpecDocument() {
         return specDocument;
+    }
+
+    public Object getRawSpecDocument() {
+        return rawSpecDocument;
+    }
+
+    public void setRawSpecDocument(Object rawSpecDocument) {
+        this.rawSpecDocument = rawSpecDocument;
+    }
+
+    public Object getSchemaTypeGraph() {
+        return schemaTypeGraph;
+    }
+
+    public void setSchemaTypeGraph(Object schemaTypeGraph) {
+        this.schemaTypeGraph = schemaTypeGraph;
     }
 
     /**

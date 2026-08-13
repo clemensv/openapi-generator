@@ -1,0 +1,56 @@
+openapi: 3.1.0
+info:
+  title: JSON Structure safe primitives
+  version: 1.0.0
+paths:
+  /records:
+    post:
+      operationId: createPrimitiveRecord
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/PrimitiveRecord'
+      responses:
+        '200':
+          description: Created
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PrimitiveRecord'
+components:
+  schemas:
+    PrimitiveRecord:
+      $schema: https://json-structure.org/meta/core/v0/#
+      $id: https://api.example.com/schemas/primitive-record
+      name: PrimitiveRecord
+      type: object
+      required:
+        - id
+        - name
+        - active
+      properties:
+        id:
+          type: uuid
+        name:
+          type: string
+          maxLength: 120
+        status:
+          type: string
+          enum:
+            - pending
+            - complete
+        active:
+          type: boolean
+        count:
+          type: int32
+        ratio:
+          type: double
+        created:
+          type: datetime
+        source:
+          type: uri
+        payload:
+          type: binary
+          contentMediaType: application/octet-stream

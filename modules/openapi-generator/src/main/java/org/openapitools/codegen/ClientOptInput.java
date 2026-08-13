@@ -17,12 +17,14 @@
 
 package org.openapitools.codegen;
 
+import com.fasterxml.jackson.databind.JsonNode;
 import io.swagger.v3.oas.models.OpenAPI;
 import io.swagger.v3.parser.core.models.AuthorizationValue;
 import lombok.Getter;
 import org.openapitools.codegen.api.TemplateDefinition;
 import org.openapitools.codegen.auth.AuthParser;
 import org.openapitools.codegen.config.GeneratorSettings;
+import org.openapitools.codegen.schema.jsonstructure.JsonStructureTypeGraph;
 
 import java.util.List;
 
@@ -30,6 +32,8 @@ public class ClientOptInput {
     private CodegenConfig config;
     private GeneratorSettings generatorSettings;
     private OpenAPI openAPI;
+    private JsonNode rawOpenAPI;
+    private JsonStructureTypeGraph jsonStructureTypeGraph;
     private List<AuthorizationValue> auths;
     // not deprecated as this is added to match other functionality, we need to move to Context<?> instead of ClientOptInput.
     @Getter private List<TemplateDefinition> userDefinedTemplates;
@@ -37,6 +41,24 @@ public class ClientOptInput {
     public ClientOptInput openAPI(OpenAPI openAPI) {
         this.setOpenAPI(openAPI);
         return this;
+    }
+
+    public ClientOptInput rawOpenAPI(JsonNode rawOpenAPI) {
+        this.rawOpenAPI = rawOpenAPI;
+        return this;
+    }
+
+    public JsonNode getRawOpenAPI() {
+        return rawOpenAPI;
+    }
+
+    public ClientOptInput jsonStructureTypeGraph(JsonStructureTypeGraph jsonStructureTypeGraph) {
+        this.jsonStructureTypeGraph = jsonStructureTypeGraph;
+        return this;
+    }
+
+    public JsonStructureTypeGraph getJsonStructureTypeGraph() {
+        return jsonStructureTypeGraph;
     }
 
     public ClientOptInput generatorSettings(GeneratorSettings generatorSettings) {

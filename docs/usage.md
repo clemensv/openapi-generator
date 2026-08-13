@@ -6,6 +6,9 @@ title: Usage
 Options for OpenAPI Generator are the same whether you're using the CLI, Maven/Gradle Plugins, or Online generation options.
 This page demonstrates navigating the options via CLI. Commands are presented here in a logical progression as a tutorial, but you're welcome to skip directly to the [generate](#generate) command.
 
+OpenAPI 3.1 descriptions using the JSON Structure dialect have additional
+processing and compatibility rules. See [JSON Structure schemas](./json-structure.md).
+
 ## help
 
 The `help` option lists all commands available to the CLI.

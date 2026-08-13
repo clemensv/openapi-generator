@@ -6,6 +6,7 @@ module.exports = {
       'plugins',
       'online',
       'usage',
+      'json-structure',
       'globals',
       'configuration',
       'file-post-processing'

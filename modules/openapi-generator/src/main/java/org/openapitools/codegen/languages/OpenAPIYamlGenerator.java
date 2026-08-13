@@ -125,8 +125,7 @@ public class OpenAPIYamlGenerator extends DefaultCodegen implements CodegenConfi
 
     @Override
     public void generateYAMLSpecFile(Map<String, Object> objs) {
-        OpenAPI openAPI = (OpenAPI) objs.get("openAPI");
-        String yaml = SerializerUtils.toYamlString(openAPI, sortOutput);
+        String yaml = SerializerUtils.toYamlString(openAPISpecForSerialization(objs), sortOutput);
         if (yaml != null) {
             objs.put("openapi-yaml", yaml);
         }

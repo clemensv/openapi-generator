@@ -76,6 +76,8 @@ public class CodegenDiscriminator {
         // is converted to a sanitized, internal representation within codegen.
         @Getter @Setter
         private String modelName;
+        @Getter @Setter
+        private String modelFqcn;
         // The raw schema name as it appears in the OAS document, before any
         // modelNamePrefix/Suffix transformation.
         @Getter
